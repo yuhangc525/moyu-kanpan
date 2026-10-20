@@ -1020,6 +1020,16 @@ footer {
   grid-column: 1 / -1;
 }
 
+.ai-insecure-http {
+  margin-top: 10px;
+}
+
+.ai-insecure-http:has(input:checked) {
+  border-color: #d9a2a2;
+  color: #7a5a20;
+  background: #fff6dc;
+}
+
 .ai-actions {
   display: flex;
   align-items: center;

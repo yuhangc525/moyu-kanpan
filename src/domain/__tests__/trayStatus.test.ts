@@ -128,6 +128,7 @@ function snapshot(): AppSnapshot {
         enabled: false,
         provider: "deepseek",
         baseUrl: "https://api.deepseek.com",
+        allowInsecureHttp: false,
         model: "x",
         timeoutSeconds: 20
       },

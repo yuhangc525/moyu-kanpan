@@ -139,8 +139,11 @@ describe("settings field table", () => {
     apply(custom, "ai-provider", field("custom"));
     assert.equal(custom.ai.baseUrl, "https://api.openai.com/v1");
     assert.equal(custom.ai.model, "gpt-4.1-mini");
+    apply(custom, "ai-allow-insecure-http", field("", true));
+    assert.equal(custom.ai.allowInsecureHttp, true);
     apply(custom, "ai-provider", field("deepseek"));
     assert.equal(custom.ai.baseUrl, "https://api.deepseek.com");
+    assert.equal(custom.ai.allowInsecureHttp, false);
 
     const opacity = settings();
     const result = apply(opacity, "background-opacity", field("72"));

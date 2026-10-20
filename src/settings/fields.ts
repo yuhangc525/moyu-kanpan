@@ -229,6 +229,7 @@ export const SETTINGS_FIELD_UPDATERS: Record<string, FieldUpdater> = {
     settings.ai.provider = element.value === "custom" ? "custom" : "deepseek";
     if (settings.ai.provider === "deepseek") {
       settings.ai.baseUrl = "https://api.deepseek.com";
+      settings.ai.allowInsecureHttp = false;
       settings.ai.model = "deepseek-v4-flash";
     } else {
       settings.ai.baseUrl = "https://api.openai.com/v1";
@@ -238,6 +239,9 @@ export const SETTINGS_FIELD_UPDATERS: Record<string, FieldUpdater> = {
   },
   "ai-base-url": trimmed(300, (settings, value) => {
     settings.ai.baseUrl = value;
+  }),
+  "ai-allow-insecure-http": bool((settings, value) => {
+    settings.ai.allowInsecureHttp = settings.ai.provider === "custom" && value;
   }),
   "ai-model": trimmed(100, (settings, value) => {
     settings.ai.model = value;

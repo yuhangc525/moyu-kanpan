@@ -4,7 +4,7 @@ import {
   normalizeBossKeyAccelerator,
   parseBossKeyAccelerator
 } from "./shortcut.js";
-import { isSecureApiBaseUrl } from "./domain/runtimeSecurity.js";
+import { isAiApiBaseUrlAllowed } from "./domain/runtimeSecurity.js";
 import type { QuoteRequest } from "./domain/types.js";
 
 export const SETTINGS_SCHEMA_VERSION = 8;
@@ -72,6 +72,7 @@ export interface AiSettings {
   enabled: boolean;
   provider: AiProvider;
   baseUrl: string;
+  allowInsecureHttp: boolean;
   model: string;
   timeoutSeconds: number;
 }
@@ -304,6 +305,7 @@ export function loadAppConfigFromObject(
   const rawRefreshPolicy = asRecord(raw.refreshPolicy);
   const legacyOpacity = asNumber(rawWindow.opacity);
   const aiProvider: AiProvider = rawAi.provider === "custom" ? "custom" : "deepseek";
+  const allowInsecureHttp = aiProvider === "custom" && rawAi.allowInsecureHttp === true;
 
   const securityMap = normalizeSecurities(raw.securities);
   const legacyWatchlist = legacyWatchlistRows(raw.watchlist);
@@ -362,7 +364,12 @@ export function loadAppConfigFromObject(
       enabled: rawAi.enabled === true || (rawAi.enabled === undefined && Boolean(apiKey)),
       provider: aiProvider,
       apiKey,
-      baseUrl: normalizeAiBaseUrl(env.AI_API_BASE_URL ?? rawAi.baseUrl, aiProvider),
+      baseUrl: normalizeAiBaseUrl(
+        env.AI_API_BASE_URL ?? rawAi.baseUrl,
+        aiProvider,
+        allowInsecureHttp
+      ),
+      allowInsecureHttp,
       model: normalizeAiModel(env.AI_MODEL ?? rawAi.model, aiProvider),
       timeoutSeconds: clampInteger(asNumber(rawAi.timeoutSeconds) ?? 20, 5, 120)
     },
@@ -433,6 +440,7 @@ export function toUserSettings(config: AppConfig): UserSettings {
       enabled: config.ai.enabled,
       provider: config.ai.provider,
       baseUrl: config.ai.baseUrl,
+      allowInsecureHttp: config.ai.allowInsecureHttp,
       model: config.ai.model,
       timeoutSeconds: config.ai.timeoutSeconds
     },
@@ -566,7 +574,8 @@ export function assertSavableSettings(value: unknown): void {
   if (rawAi.provider !== "deepseek" && rawAi.provider !== "custom") {
     throw new Error("AI 服务类型无效");
   }
-  assertAiBaseUrl(rawAi.baseUrl);
+  const allowInsecureHttp = rawAi.provider === "custom" && rawAi.allowInsecureHttp === true;
+  assertAiBaseUrl(rawAi.baseUrl, allowInsecureHttp);
   if (!asText(rawAi.model, 100)) throw new Error("AI 模型名称不能为空");
   const aiTimeout = asStrictNumber(rawAi.timeoutSeconds);
   if (aiTimeout == null || aiTimeout < 5 || aiTimeout > 120) {
@@ -1011,13 +1020,17 @@ function asTheme(value: unknown): ThemeMode {
   return value === "stealth" ? "stealth" : "standard";
 }
 
-function normalizeAiBaseUrl(value: unknown, provider: AiProvider): string {
+function normalizeAiBaseUrl(
+  value: unknown,
+  provider: AiProvider,
+  allowInsecureHttp: boolean
+): string {
   const fallback =
     provider === "deepseek" ? "https://api.deepseek.com" : "https://api.openai.com/v1";
   const candidate = asText(value, 300) || fallback;
   try {
     const url = new URL(candidate);
-    if (!isSecureApiBaseUrl(candidate)) {
+    if (!isAiApiBaseUrlAllowed(candidate, provider === "custom" && allowInsecureHttp)) {
       return fallback;
     }
     return url.toString().replace(/\/$/, "");
@@ -1030,11 +1043,11 @@ function normalizeAiModel(value: unknown, provider: AiProvider): string {
   return asText(value, 100) || (provider === "deepseek" ? "deepseek-v4-flash" : "gpt-4.1-mini");
 }
 
-function assertAiBaseUrl(value: unknown): void {
+function assertAiBaseUrl(value: unknown, allowInsecureHttp: boolean): void {
   const candidate = asText(value, 300);
   if (!candidate) throw new Error("AI API 地址不能为空");
   try {
-    if (!isSecureApiBaseUrl(candidate)) {
+    if (!isAiApiBaseUrlAllowed(candidate, allowInsecureHttp)) {
       throw new Error();
     }
   } catch {

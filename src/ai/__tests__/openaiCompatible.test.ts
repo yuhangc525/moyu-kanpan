@@ -9,6 +9,7 @@ const ai: AppConfig["ai"] = {
   provider: "deepseek",
   apiKey: "sk-private",
   baseUrl: "https://api.deepseek.com",
+  allowInsecureHttp: false,
   model: "deepseek-v4-flash",
   timeoutSeconds: 5
 };

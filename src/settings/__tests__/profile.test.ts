@@ -60,6 +60,7 @@ function current(): UserSettings {
       enabled: true,
       provider: "deepseek",
       baseUrl: "https://api.deepseek.com",
+      allowInsecureHttp: false,
       model: "deepseek-v4-flash",
       timeoutSeconds: 20
     },

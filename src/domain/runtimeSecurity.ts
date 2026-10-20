@@ -61,10 +61,17 @@ export function isLoopbackHost(hostname: string): boolean {
 }
 
 export function isSecureApiBaseUrl(value: string): boolean {
+  return isAiApiBaseUrlAllowed(value, false);
+}
+
+export function isAiApiBaseUrlAllowed(value: string, allowInsecureRemoteHttp: boolean): boolean {
   try {
     const url = new URL(value);
     if (url.username || url.password) return false;
-    return url.protocol === "https:" || (url.protocol === "http:" && isLoopbackHost(url.hostname));
+    return (
+      url.protocol === "https:" ||
+      (url.protocol === "http:" && (allowInsecureRemoteHttp || isLoopbackHost(url.hostname)))
+    );
   } catch {
     return false;
   }

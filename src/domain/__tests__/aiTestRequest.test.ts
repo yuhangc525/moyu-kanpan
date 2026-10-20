@@ -7,6 +7,7 @@ const VALID = {
     enabled: true,
     provider: "custom",
     baseUrl: "https://api.example.com/v1/",
+    allowInsecureHttp: false,
     model: " gpt-x ",
     timeoutSeconds: 30.4
   },
@@ -20,6 +21,7 @@ describe("AI test request validation", () => {
       enabled: true,
       provider: "custom",
       baseUrl: "https://api.example.com/v1",
+      allowInsecureHttp: false,
       model: "gpt-x",
       timeoutSeconds: 30,
       apiKey: "sk-draft"
@@ -51,6 +53,13 @@ describe("AI test request validation", () => {
     assert.throws(
       () => normalizeAiTestRequest(withAi({ baseUrl: "http://evil.example.com" }), ""),
       /AI API 地址无效/
+    );
+    assert.equal(
+      normalizeAiTestRequest(
+        withAi({ baseUrl: "http://67.216.219.42:18567/v1", allowInsecureHttp: true }),
+        ""
+      ).baseUrl,
+      "http://67.216.219.42:18567/v1"
     );
     assert.throws(() => normalizeAiTestRequest(withAi({ baseUrl: "" }), ""), /AI API 地址无效/);
     // 本机回环的明文 http 是允许的（本地模型）

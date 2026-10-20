@@ -341,6 +341,11 @@ function render(): void {
           <label><span>超时（秒）</span><input data-setting="ai-timeout" type="number" min="5" max="120" step="1" value="${settings.ai.timeoutSeconds}" /></label>
           <label class="ai-key-field"><span>API Key</span><input data-setting="ai-api-key" type="password" autocomplete="new-password" value="${escapeAttr(ai.pendingApiKey)}" placeholder="${ai.keyPlaceholder()}" /></label>
         </div>
+        ${
+          settings.ai.provider === "custom"
+            ? `<label class="check-card ai-insecure-http"><input data-setting="ai-allow-insecure-http" type="checkbox" ${settings.ai.allowInsecureHttp ? "checked" : ""} /><span><strong>允许远程 HTTP</strong><small>仅用于无法提供 HTTPS 的自建服务；API Key 和新闻内容将以明文传输</small></span></label>`
+            : ""
+        }
         <div class="ai-actions">
           <button type="button" data-action="test-ai" ${ai.busy ? "disabled" : ""}>${ai.busy ? "测试中…" : "测试连接"}</button>
           <button type="button" data-action="clear-ai-key" class="danger" ${ai.status?.credentialSource !== "secure" || ai.busy ? "disabled" : ""}>清除 API Key</button>

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  isAiApiBaseUrlAllowed,
   isExternalLinkAllowed,
   isInsecureStorageBackend,
   isSecureApiBaseUrl,
@@ -58,6 +59,9 @@ describe("runtime renderer security", () => {
     assert.equal(isSecureApiBaseUrl("http://localhost:8000/v1"), true);
     assert.equal(isSecureApiBaseUrl("http://api.example.com/v1"), false);
     assert.equal(isSecureApiBaseUrl("https://user:pass@example.com/v1"), false);
+    assert.equal(isAiApiBaseUrlAllowed("http://api.example.com/v1", true), true);
+    assert.equal(isAiApiBaseUrlAllowed("ftp://api.example.com/v1", true), false);
+    assert.equal(isAiApiBaseUrlAllowed("http://user:pass@example.com/v1", true), false);
   });
 
   it("flags the plaintext safeStorage backend on Linux only", () => {

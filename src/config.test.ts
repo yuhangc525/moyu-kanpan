@@ -65,6 +65,7 @@ describe("config", () => {
       provider: "deepseek",
       apiKey: "secret",
       baseUrl: "https://api.example.com/v1",
+      allowInsecureHttp: false,
       model: "gpt-test",
       timeoutSeconds: 20
     });
@@ -161,6 +162,7 @@ describe("config", () => {
             enabled: true,
             provider: "custom",
             baseUrl: "http://127.0.0.1:11434/v1",
+            allowInsecureHttp: false,
             model: "local-fast",
             timeoutSeconds: 30
           }
@@ -173,6 +175,7 @@ describe("config", () => {
       enabled: true,
       provider: "custom",
       baseUrl: "http://127.0.0.1:11434/v1",
+      allowInsecureHttp: false,
       model: "local-fast",
       timeoutSeconds: 30
     });
@@ -186,6 +189,26 @@ describe("config", () => {
         }),
       /不能写入普通设置/
     );
+  });
+
+  it("allows remote HTTP only when a custom provider explicitly opts in", () => {
+    const remoteUrl = "http://67.216.219.42:18567/v1";
+    const enabled = loadAppConfigFromObject({
+      ai: {
+        provider: "custom",
+        baseUrl: remoteUrl,
+        allowInsecureHttp: true
+      }
+    });
+    assert.equal(enabled.ai.baseUrl, remoteUrl);
+    assert.equal(enabled.ai.allowInsecureHttp, true);
+    assert.doesNotThrow(() => assertSavableSettings(toUserSettings(enabled)));
+
+    const disabled = loadAppConfigFromObject({
+      ai: { provider: "custom", baseUrl: remoteUrl }
+    });
+    assert.equal(disabled.ai.baseUrl, "https://api.openai.com/v1");
+    assert.equal(disabled.ai.allowInsecureHttp, false);
   });
 
   it("preserves the secure runtime API key when public settings are saved", () => {

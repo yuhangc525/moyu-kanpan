@@ -1,6 +1,6 @@
 import type { AppConfig } from "../config.js";
 import { hasLimitedNewsMaterial } from "../domain/news.js";
-import { isSecureApiBaseUrl } from "../domain/runtimeSecurity.js";
+import { isAiApiBaseUrlAllowed } from "../domain/runtimeSecurity.js";
 import type {
   NewsAnalysis,
   NewsDirection,
@@ -134,8 +134,9 @@ async function requestJson(
   fetcher: typeof fetch,
   options: AiRequestOptions
 ): Promise<unknown> {
-  if (!isSecureApiBaseUrl(ai.baseUrl)) {
-    throw new Error("AI API 地址必须使用 HTTPS；仅本机地址允许 HTTP");
+  const allowInsecureHttp = ai.provider === "custom" && ai.allowInsecureHttp;
+  if (!isAiApiBaseUrlAllowed(ai.baseUrl, allowInsecureHttp)) {
+    throw new Error("AI API 地址必须使用 HTTPS；远程 HTTP 需在自定义服务中明确允许");
   }
   const maxAttempts = Math.max(1, Math.min(3, options.maxAttempts ?? 2));
   const retryDelayMs = Math.max(0, options.retryDelayMs ?? 250);
