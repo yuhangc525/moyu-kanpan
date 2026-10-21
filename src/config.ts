@@ -7,7 +7,7 @@ import {
 import { isAiApiBaseUrlAllowed } from "./domain/runtimeSecurity.js";
 import type { QuoteRequest } from "./domain/types.js";
 
-export const SETTINGS_SCHEMA_VERSION = 8;
+export const SETTINGS_SCHEMA_VERSION = 9;
 const BOSS_KEY_SCHEMA_VERSION = 5;
 const WINDOW_BOUNDS_SCHEMA_VERSION = 5;
 const MARKET_TAB_SCHEMA_VERSION = 6;
@@ -345,7 +345,7 @@ export function loadAppConfigFromObject(
     tabs,
     navigation,
     quotes: {
-      fields: normalizeQuoteFields(rawQuotes.fields),
+      fields: normalizeQuoteFields(rawQuotes.fields, sourceSchemaVersion),
       sort: asQuoteSort(rawQuotes.sort)
     },
     news: {
@@ -986,15 +986,24 @@ function normalizeNavigation(
   };
 }
 
-function normalizeQuoteFields(value: unknown): QuoteField[] {
-  if (!Array.isArray(value)) return ["price", "changePercent"];
+function normalizeQuoteFields(value: unknown, sourceSchemaVersion: number): QuoteField[] {
+  const defaultFields: QuoteField[] = ["price", "changePercent", "change"];
+  if (!Array.isArray(value)) return defaultFields;
   const allowed = new Set<string>(QUOTE_FIELDS);
   const fields = [
     ...new Set(
       value.filter((field): field is QuoteField => typeof field === "string" && allowed.has(field))
     )
   ];
-  return fields.length > 0 ? fields.slice(0, 5) : ["price", "changePercent"];
+  if (
+    sourceSchemaVersion < 9 &&
+    fields.length === 2 &&
+    fields.includes("price") &&
+    fields.includes("changePercent")
+  ) {
+    return defaultFields;
+  }
+  return fields.length > 0 ? fields.slice(0, 5) : defaultFields;
 }
 
 function normalizeCodeArray(value: unknown): string[] {

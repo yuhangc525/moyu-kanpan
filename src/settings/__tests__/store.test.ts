@@ -57,7 +57,7 @@ describe("SettingsStore", () => {
       await writeFile(filePath, JSON.stringify(future, null, 2));
 
       const loaded = await store.load();
-      assert.equal(loaded.schemaVersion, 8);
+      assert.equal(loaded.schemaVersion, 9);
       assert.match(store.consumeRecoveryMessage() ?? "", /更新版本/);
       // 读取不该覆盖更新版本的文件。
       const untouched = JSON.parse(await readFile(filePath, "utf8")) as Record<string, unknown>;
@@ -102,7 +102,7 @@ describe("SettingsStore", () => {
         },
         { x: 120, y: 80, width: 420, height: 600 }
       );
-      assert.match(await readFile(filePath, "utf8"), /"schemaVersion": 8/);
+      assert.match(await readFile(filePath, "utf8"), /"schemaVersion": 9/);
 
       settings.appearance.theme = "standard";
       await store.save(settings);
@@ -135,11 +135,11 @@ describe("SettingsStore", () => {
       const store = new SettingsStore(filePath, defaults, {});
       const migrated = await store.load();
       const persisted = await readFile(filePath, "utf8");
-      assert.equal(migrated.schemaVersion, 8);
+      assert.equal(migrated.schemaVersion, 9);
       assert.equal(migrated.window.bossKeyAccelerator, "CommandOrControl+Alt+Space");
       assert.equal(migrated.window.width, 380);
       assert.equal(migrated.window.height, 520);
-      assert.match(persisted, /"schemaVersion": 8/);
+      assert.match(persisted, /"schemaVersion": 9/);
       assert.match(persisted, /"bossKeyAccelerator": "CommandOrControl\+Alt\+Space"/);
     } finally {
       await rm(directory, { recursive: true, force: true });

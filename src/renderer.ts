@@ -23,7 +23,7 @@ import {
 import { describeAppSnapshotProblem } from "./domain/appSnapshotShape.js";
 
 const defaultSettings: UserSettings = {
-  schemaVersion: 8,
+  schemaVersion: 9,
   personalSeedVersion: 0,
   securities: [
     { code: "000001", market: "SZ", name: "", alias: "" },
@@ -86,7 +86,7 @@ const defaultSettings: UserSettings = {
     lastActiveTabId: "watchlist"
   },
   quotes: {
-    fields: ["price", "changePercent"],
+    fields: ["price", "changePercent", "change"],
     sort: "manual"
   },
   news: {
@@ -227,7 +227,7 @@ const emptySnapshot: AppSnapshot = {
 
 const fieldLabels: Record<QuoteField, string> = {
   price: "现价",
-  change: "涨跌",
+  change: "涨跌额",
   changePercent: "涨幅",
   open: "开盘",
   previousClose: "昨收",

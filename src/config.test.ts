@@ -118,8 +118,28 @@ describe("config", () => {
     assert.equal(settings.appearance.theme, "stealth");
     assert.equal(settings.ai.model, "deepseek-v4-flash");
     assert.equal("apiKey" in settings.ai, false);
-    assert.equal(settings.schemaVersion, 8);
+    assert.equal(settings.schemaVersion, 9);
     assert.equal(settings.window.trayOnly, true);
+  });
+
+  it("adds change amount to the legacy default quote fields only", () => {
+    const migrated = loadAppConfigFromObject({
+      schemaVersion: 8,
+      quotes: { fields: ["price", "changePercent"], sort: "manual" }
+    });
+    assert.deepEqual(migrated.quotes.fields, ["price", "changePercent", "change"]);
+
+    const customized = loadAppConfigFromObject({
+      schemaVersion: 8,
+      quotes: { fields: ["price", "high"], sort: "manual" }
+    });
+    assert.deepEqual(customized.quotes.fields, ["price", "high"]);
+
+    const current = loadAppConfigFromObject({
+      schemaVersion: 9,
+      quotes: { fields: ["price", "changePercent"], sort: "manual" }
+    });
+    assert.deepEqual(current.quotes.fields, ["price", "changePercent"]);
   });
 
   it("normalizes local risk settings and holding alert rules", () => {
@@ -145,7 +165,7 @@ describe("config", () => {
       ]
     });
 
-    assert.equal(config.schemaVersion, 8);
+    assert.equal(config.schemaVersion, 9);
     assert.equal(config.risk.mode, "active");
     assert.equal(config.risk.oneR, 500);
     assert.equal(config.risk.notifications.windows, true);
