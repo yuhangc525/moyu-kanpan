@@ -252,6 +252,7 @@ export interface MarketOverview {
 
 export interface MarketDetail {
   instrument: MarketInstrument;
+  previousClose: number | null;
   intraday: MarketSeries<IntradayPoint>;
   daily: MarketSeries<DailyCandle>;
   fetchedAt: string;

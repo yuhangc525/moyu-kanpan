@@ -159,6 +159,7 @@ describe("market data coordinator", () => {
     assert.equal(intradayCalls, 1);
     assert.equal(dailyCalls, 1);
     assert.equal(first.instrument.key, second.instrument.key);
+    assert.equal(first.previousClose, 3990);
     // settle 之后条目要清除，后续请求不应被永久复用。
     await coordinator.fetchDetail(instrument, "eastmoney", {
       marketOpen: true,

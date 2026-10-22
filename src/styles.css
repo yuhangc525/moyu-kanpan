@@ -743,11 +743,71 @@ h1 {
 }
 
 .detail-chart {
+  position: relative;
   min-height: 190px;
   padding: 5px 7px 2px;
   border-radius: 7px;
   background: rgb(255 255 255 / 0.035);
   overflow: hidden;
+}
+
+.chart-crosshair {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.market-chart.is-hovering .chart-crosshair {
+  opacity: 1;
+}
+
+.chart-crosshair-line {
+  stroke: rgb(237 242 244 / 0.38);
+  stroke-width: 0.8;
+  stroke-dasharray: 2 2;
+}
+
+.chart-crosshair-point {
+  fill: rgb(0 0 0 / 0.12);
+  stroke: #edf2f4;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 9px;
+  min-width: 106px;
+  padding: 6px 7px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 5px;
+  color: rgb(237 242 244 / 0.62);
+  background: rgb(8 13 16 / var(--widget-opacity));
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.28);
+  font-size: 8px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.chart-tooltip[hidden] {
+  display: none;
+}
+
+.chart-tooltip strong {
+  color: #edf2f4;
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chart-tooltip strong.up {
+  color: #ff6b6b;
+}
+
+.chart-tooltip strong.down {
+  color: #4ecdc4;
 }
 
 .chart-empty {

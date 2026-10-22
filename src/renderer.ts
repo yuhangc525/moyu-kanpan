@@ -20,6 +20,14 @@ import {
   formatFixedOrDash,
   formatSignedPercent
 } from "./presentation/format.js";
+import {
+  chartBottomLabelY,
+  chartPointX,
+  chartValueY,
+  nearestChartPointIndex,
+  priceChange,
+  type ChartPointLayout
+} from "./presentation/chartInteraction.js";
 import { describeAppSnapshotProblem } from "./domain/appSnapshotShape.js";
 
 const defaultSettings: UserSettings = {
@@ -247,6 +255,8 @@ let marketDetail: MarketDetail | null = null;
 let marketDetailLoading = false;
 let marketDetailError: string | null = null;
 let marketChartMode: "intraday" | "daily" | "boll" = "intraday";
+// 行情快照会重建详情 DOM；保留指针位置，才能在鼠标静止时恢复悬浮数据。
+let chartPointerPosition: ChartPointerPosition | null = null;
 let marketDetailRequestId = 0;
 let marketDetailRefreshTimer: number | null = null;
 let lastRenderedPageKey = "";
@@ -315,6 +325,7 @@ function render(next: AppSnapshot): void {
       if (previous != null) element.scrollTop = previous;
     });
   }
+  restoreChartHover();
   lastRenderedPageKey = pageKey;
 }
 
@@ -670,6 +681,7 @@ function renderMarketDetail(): string {
             ? renderIntradayChart(marketDetail.intraday, false)
             : renderCandleChart(marketDetail.daily, marketChartMode === "boll")
         }
+        <div class="chart-tooltip" data-chart-tooltip hidden aria-hidden="true"></div>
       </section>
       ${renderMarketDetailStats(marketDetail)}
       ${series.error ? `<div class="chart-warning">${escapeHtml(series.error)}</div>` : ""}
@@ -709,11 +721,15 @@ function renderIntradayChart(series: MarketSeries<IntradayPoint>, compact: boole
     .join(" ");
   const firstTime = formatTime(items[0]!.time);
   const lastTime = formatTime(items.at(-1)!.time);
+  const hoverAttributes = compact
+    ? ""
+    : `data-chart-kind="intraday" data-chart-width="${width}" data-chart-min="${min}" data-chart-max="${max}" data-chart-top="${top}" data-chart-bottom="${top + chartHeight}"`;
   return `
-    <svg class="market-chart intraday-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="分时图">
+    <svg class="market-chart intraday-chart" ${hoverAttributes} viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="分时图">
       <line class="chart-grid" x1="0" x2="${width}" y1="${y((max + min) / 2)}" y2="${y((max + min) / 2)}" />
       ${averagePoints ? `<polyline class="average-line" points="${averagePoints}" />` : ""}
       <polyline class="price-line" points="${pricePoints}" />
+      ${compact ? "" : renderChartCrosshair(top, top + chartHeight, width)}
       ${compact ? "" : `<text class="chart-label" x="2" y="10">${formatNumber(max)}</text><text class="chart-label" x="2" y="${height - 3}">${firstTime}</text><text class="chart-label end" x="338" y="${height - 3}">${lastTime}</text>`}
     </svg>
   `;
@@ -728,6 +744,7 @@ function renderCandleChart(series: MarketSeries<DailyCandle>, showBoll: boolean)
   const priceBottom = 168;
   const volumeTop = 184;
   const volumeBottom = 216;
+  const dateLabelY = chartBottomLabelY(height);
   const rangeValues = items.flatMap((item) => [
     item.low,
     item.high,
@@ -759,16 +776,21 @@ function renderCandleChart(series: MarketSeries<DailyCandle>, showBoll: boolean)
       ].join("")
     : "";
   return `
-    <svg class="market-chart candle-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="${showBoll ? "布林线日K图" : "日K图"}">
+    <svg class="market-chart candle-chart" data-chart-kind="${showBoll ? "boll" : "daily"}" data-chart-width="${width}" data-chart-min="${min}" data-chart-max="${max}" data-chart-top="${priceTop}" data-chart-bottom="${priceBottom}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="${showBoll ? "布林线日K图" : "日K图"}">
       <line class="chart-grid" x1="0" x2="${width}" y1="${priceBottom}" y2="${priceBottom}" />
       <line class="chart-grid" x1="0" x2="${width}" y1="${volumeTop}" y2="${volumeTop}" />
       ${candles}${boll}
+      ${renderChartCrosshair(priceTop, volumeBottom, width)}
       <text class="chart-label" x="2" y="10">${formatNumber(max)}</text>
       <text class="chart-label" x="2" y="${priceBottom - 3}">${formatNumber(min)}</text>
-      <text class="chart-label" x="2" y="228">${items[0]!.date.slice(5)}</text>
-      <text class="chart-label end" x="338" y="228">${items.at(-1)!.date.slice(5)}</text>
+      <text class="chart-label" x="2" y="${dateLabelY}">${items[0]!.date.slice(5)}</text>
+      <text class="chart-label end" x="338" y="${dateLabelY}">${items.at(-1)!.date.slice(5)}</text>
     </svg>
   `;
+}
+
+function renderChartCrosshair(top: number, bottom: number, width: number): string {
+  return `<g class="chart-crosshair" aria-hidden="true"><line class="chart-crosshair-line" data-crosshair-x y1="${top}" y2="${bottom}"/><line class="chart-crosshair-line" data-crosshair-y x1="0" x2="${width}"/><circle class="chart-crosshair-point" data-crosshair-point r="2.6"/></g>`;
 }
 
 function bollPolyline(
@@ -797,6 +819,187 @@ function renderMarketDetailStats(detail: MarketDetail): string {
   const latest = detail.daily.items.at(-1);
   if (!latest) return "";
   return `<div class="chart-stats"><span><small>开</small><strong>${formatNumber(latest.open)}</strong></span><span><small>高/低</small><strong>${formatNumber(latest.high)} / ${formatNumber(latest.low)}</strong></span><span><small>收</small><strong>${formatNumber(latest.close)}</strong></span></div>`;
+}
+
+interface ChartTooltipRow {
+  label: string;
+  value: string;
+  direction?: string;
+}
+
+interface ChartPointerPosition {
+  clientX: number;
+  clientY: number;
+  kind: string;
+}
+
+function handleChartPointerMove(event: PointerEvent): void {
+  const target = event.target;
+  if (!(target instanceof Element) || !marketDetail) {
+    hideChartHover();
+    return;
+  }
+  const chart = target.closest<SVGSVGElement>(".market-chart[data-chart-kind]");
+  if (!chart) {
+    hideChartHover();
+    return;
+  }
+  chartPointerPosition = {
+    clientX: event.clientX,
+    clientY: event.clientY,
+    kind: chart.dataset.chartKind ?? ""
+  };
+  updateChartHover(chart, event.clientX, event.clientY);
+}
+
+function restoreChartHover(): void {
+  if (!chartPointerPosition) return;
+  if (!marketDetail) {
+    chartPointerPosition = null;
+    return;
+  }
+  const chart = rootElement.querySelector<SVGSVGElement>(".market-chart[data-chart-kind]");
+  if (!chart || chart.dataset.chartKind !== chartPointerPosition.kind) {
+    chartPointerPosition = null;
+    return;
+  }
+  const rect = chart.getBoundingClientRect();
+  const { clientX, clientY } = chartPointerPosition;
+  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+    hideChartHover();
+    return;
+  }
+  updateChartHover(chart, clientX, clientY);
+}
+
+function updateChartHover(chart: SVGSVGElement, clientX: number, clientY: number): void {
+  if (!marketDetail) return;
+  const container = chart.closest<HTMLElement>(".detail-chart");
+  const tooltip = container?.querySelector<HTMLElement>("[data-chart-tooltip]");
+  if (!container || !tooltip) return;
+
+  const kind = chart.dataset.chartKind;
+  const chartWidth = Number(chart.dataset.chartWidth);
+  const min = Number(chart.dataset.chartMin);
+  const max = Number(chart.dataset.chartMax);
+  const top = Number(chart.dataset.chartTop);
+  const bottom = Number(chart.dataset.chartBottom);
+  if (![chartWidth, min, max, top, bottom].every(Number.isFinite)) return;
+
+  const rect = chart.getBoundingClientRect();
+  if (rect.width <= 0) return;
+  const localX = ((clientX - rect.left) / rect.width) * chartWidth;
+  let pointX: number;
+  let pointY: number;
+  let rows: ChartTooltipRow[];
+
+  if (kind === "intraday") {
+    const items = marketDetail.intraday.items.filter((item) => Number.isFinite(item.price));
+    const index = nearestChartPointIndex(localX, chartWidth, items.length, "edges");
+    const item = items[index];
+    if (!item) return;
+    const change = priceChange(item.price, marketDetail.previousClose);
+    pointX = chartPointX(index, chartWidth, items.length, "edges");
+    pointY = chartValueY(item.price, min, max, top, bottom);
+    const direction = numberDirection(change.amount);
+    rows = [
+      { label: "时间", value: formatTime(item.time) },
+      { label: "现价", value: formatNumber(item.price) },
+      { label: "涨跌额", value: formatSignedPrice(change.amount), direction },
+      { label: "涨跌幅", value: formatPercent(change.percent), direction },
+      { label: "均价", value: formatNumber(item.average) },
+      { label: "成交量", value: formatCompact(item.volume, "手") },
+      { label: "成交额", value: formatCompact(item.amount, "元") }
+    ];
+  } else if (kind === "daily" || kind === "boll") {
+    const allItems = marketDetail.daily.items;
+    const items = allItems.slice(-45);
+    const layout: ChartPointLayout = "centers";
+    const index = nearestChartPointIndex(localX, chartWidth, items.length, layout);
+    const item = items[index];
+    if (!item) return;
+    const fullIndex = allItems.length - items.length + index;
+    const change = priceChange(item.close, allItems[fullIndex - 1]?.close);
+    pointX = chartPointX(index, chartWidth, items.length, layout);
+    pointY = chartValueY(item.close, min, max, top, bottom);
+    const direction = numberDirection(change.amount);
+    rows = [
+      { label: "日期", value: item.date },
+      { label: "开盘", value: formatNumber(item.open) },
+      { label: "最高", value: formatNumber(item.high) },
+      { label: "最低", value: formatNumber(item.low) },
+      { label: "收盘", value: formatNumber(item.close) },
+      { label: "涨跌额", value: formatSignedPrice(change.amount), direction },
+      { label: "涨跌幅", value: formatPercent(change.percent), direction },
+      { label: "成交量", value: formatCompact(item.volume, "手") }
+    ];
+    if (kind === "boll") {
+      rows.push(
+        { label: "上轨", value: formatNumber(item.bollUpper) },
+        { label: "中轨", value: formatNumber(item.bollMid) },
+        { label: "下轨", value: formatNumber(item.bollLower) }
+      );
+    }
+  } else {
+    return;
+  }
+
+  updateChartCrosshair(chart, pointX, pointY);
+  showChartTooltip(container, tooltip, clientX, clientY, rows);
+}
+
+function updateChartCrosshair(chart: SVGSVGElement, x: number, y: number): void {
+  const vertical = chart.querySelector<SVGLineElement>("[data-crosshair-x]");
+  const horizontal = chart.querySelector<SVGLineElement>("[data-crosshair-y]");
+  const point = chart.querySelector<SVGCircleElement>("[data-crosshair-point]");
+  vertical?.setAttribute("x1", String(x));
+  vertical?.setAttribute("x2", String(x));
+  horizontal?.setAttribute("y1", String(y));
+  horizontal?.setAttribute("y2", String(y));
+  point?.setAttribute("cx", String(x));
+  point?.setAttribute("cy", String(y));
+  chart.classList.add("is-hovering");
+}
+
+function showChartTooltip(
+  container: HTMLElement,
+  tooltip: HTMLElement,
+  clientX: number,
+  clientY: number,
+  rows: ChartTooltipRow[]
+): void {
+  tooltip.innerHTML = rows
+    .map(
+      (row) =>
+        `<span>${escapeHtml(row.label)}</span><strong class="${escapeAttr(row.direction ?? "")}">${escapeHtml(row.value)}</strong>`
+    )
+    .join("");
+  tooltip.hidden = false;
+  tooltip.setAttribute("aria-hidden", "false");
+
+  const containerRect = container.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const pointerX = clientX - containerRect.left;
+  const pointerY = clientY - containerRect.top;
+  let left = pointerX + 10;
+  if (left + tooltipRect.width > containerRect.width - 4) {
+    left = pointerX - tooltipRect.width - 10;
+  }
+  const maxLeft = Math.max(4, containerRect.width - tooltipRect.width - 4);
+  const maxTop = Math.max(4, containerRect.height - tooltipRect.height - 4);
+  tooltip.style.left = `${Math.min(maxLeft, Math.max(4, left))}px`;
+  tooltip.style.top = `${Math.min(maxTop, Math.max(4, pointerY - tooltipRect.height / 2))}px`;
+}
+
+function hideChartHover(): void {
+  chartPointerPosition = null;
+  rootElement
+    .querySelectorAll<SVGSVGElement>(".market-chart.is-hovering")
+    .forEach((chart) => chart.classList.remove("is-hovering"));
+  rootElement.querySelectorAll<HTMLElement>("[data-chart-tooltip]").forEach((tooltip) => {
+    tooltip.hidden = true;
+    tooltip.setAttribute("aria-hidden", "true");
+  });
 }
 
 function marketDetailAttributes(
@@ -1143,6 +1346,8 @@ function applyAppearance(settings: UserSettings): void {
 rootElement.addEventListener("click", (event) => {
   void handleRootClick(event);
 });
+rootElement.addEventListener("pointermove", handleChartPointerMove);
+rootElement.addEventListener("pointerleave", hideChartHover);
 
 async function handleRootClick(event: MouseEvent): Promise<void> {
   const control = (event.target as HTMLElement).closest<HTMLElement>("[data-action], [data-url]");
@@ -1400,6 +1605,12 @@ function formatNumber(value: number | null | undefined): string {
 function formatSigned(value: number | null | undefined): string {
   if (value == null) return "--";
   return (value > 0 ? "+" : "") + value.toFixed(2);
+}
+
+function formatSignedPrice(value: number | null | undefined): string {
+  if (value == null) return "--";
+  const digits = Math.abs(value) > 100 ? 2 : 3;
+  return (value > 0 ? "+" : "") + value.toFixed(digits);
 }
 
 function formatPercent(value: number | null | undefined): string {

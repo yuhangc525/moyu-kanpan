@@ -49,6 +49,7 @@ export interface CachedValue<T> {
 
 export interface CachedMarketDetail {
   name: string;
+  previousClose?: number | null;
   intraday?: CachedValue<MarketSeries<IntradayPoint>>;
   daily?: CachedValue<MarketSeries<DailyCandle>>;
 }
@@ -281,6 +282,7 @@ export class MarketDataCoordinator {
     await this.persistCache();
     return {
       instrument: { ...instrument, name },
+      previousClose: intraday.previousClose,
       intraday: intraday.series,
       daily: daily.series,
       fetchedAt: new Date(context.nowMs ?? Date.now()).toISOString()
@@ -337,7 +339,7 @@ export class MarketDataCoordinator {
     preferred: LiveQuoteSource,
     context: MarketFetchContext,
     allowFreshCache: boolean
-  ): Promise<{ name: string; series: MarketSeries<IntradayPoint> }> {
+  ): Promise<{ name: string; previousClose: number | null; series: MarketSeries<IntradayPoint> }> {
     const cache = await this.ensureCache();
     const cachedDetail = cache.details[instrument.key];
     const cached = cachedDetail?.intraday;
@@ -347,7 +349,11 @@ export class MarketDataCoordinator {
       cached &&
       nowMs - Date.parse(cached.savedAt) < (this.options.intradayTtlMs ?? 25_000)
     ) {
-      return { name: cachedDetail.name, series: cached.value };
+      return {
+        name: cachedDetail.name,
+        previousClose: cachedDetail.previousClose ?? null,
+        series: cached.value
+      };
     }
 
     const outcome = await this.fetchSeries<IntradayPoint, IntradayProviderResult>(
@@ -369,19 +375,29 @@ export class MarketDataCoordinator {
     if (outcome) {
       const detail = cache.details[instrument.key] ?? { name: instrument.name };
       detail.name = outcome.result.name || detail.name;
+      detail.previousClose = outcome.result.previousClose;
       detail.intraday = { savedAt: new Date(nowMs).toISOString(), value: outcome.series };
       cache.details[instrument.key] = detail;
       this.cacheDirty = true;
-      return { name: detail.name, series: outcome.series };
+      return {
+        name: detail.name,
+        previousClose: outcome.result.previousClose,
+        series: outcome.series
+      };
     }
 
     if (cached) {
       return {
         name: cachedDetail.name,
+        previousClose: cachedDetail.previousClose ?? null,
         series: { ...cached.value, source: "local", stale: true, error: "双源不可用，显示缓存" }
       };
     }
-    return { name: instrument.name, series: { ...emptySeries(), error: "分时双源不可用" } };
+    return {
+      name: instrument.name,
+      previousClose: null,
+      series: { ...emptySeries(), error: "分时双源不可用" }
+    };
   }
 
   private async loadDaily(
