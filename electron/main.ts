@@ -1,3 +1,4 @@
+import { searchSecurities } from "../src/services/securitySearch.js";
 import {
   app,
   BrowserWindow,
@@ -1462,6 +1463,38 @@ function registerIpc(): void {
       nowMs: now.getTime(),
       maxSourceAgeMs: Math.max(config.pollIntervals.quotesMs * 10, 180_000)
     });
+  });
+  handleTrusted("securities:search", (_event, query: unknown) => searchSecurities(query));
+  handleTrusted("watchlist:add", async (_event, value: unknown) => {
+    const security = value as { code?: string; name?: string; market?: string } | null;
+    if (
+      !security ||
+      typeof security.code !== "string" ||
+      !/^\d{6}$/.test(security.code) ||
+      typeof security.name !== "string" ||
+      security.name.length > 80 ||
+      !["SH", "SZ", "BJ"].includes(security.market ?? "")
+    )
+      throw new Error("股票信息无效");
+    if (config.watchlist.some((item) => item.securityCode === security.code))
+      return settingsForRenderer(config);
+    if (config.watchlist.length >= 50) throw new Error("自选股最多 50 只");
+    const next = settingsForRenderer(config);
+    if (!next.securities.some((item) => item.code === security.code)) {
+      next.securities.push({
+        code: security.code,
+        name: security.name,
+        market: security.market as "SH" | "SZ" | "BJ",
+        alias: ""
+      });
+    }
+    next.watchlist.push({
+      securityCode: security.code,
+      visible: true,
+      order: Math.max(-1, ...next.watchlist.map((item) => item.order)) + 1,
+      groupId: "all"
+    });
+    return saveSettings(next);
   });
   handleTrusted("settings:save", async (_event, value: unknown) => {
     // 渲染器已被 sender 校验过，但载荷体积仍要有上限（配置导入包有 2 MB 上限）。

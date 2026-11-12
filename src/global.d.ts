@@ -1,4 +1,4 @@
-import type { AiSettings, UserSettings } from "./config.js";
+import type { AiSettings, Security, UserSettings } from "./config.js";
 import type {
   AiRuntimeStatus,
   AppSnapshot,
@@ -14,6 +14,8 @@ export interface ProfileApplyResult {
 }
 
 export interface FloatingStockApi {
+  searchSecurities: (query: string) => Promise<Security[]>;
+  addWatchStock: (security: Security) => Promise<UserSettings>;
   notifyOnline: () => Promise<void>;
   getSnapshot: () => Promise<AppSnapshot>;
   getMarketDetail: (instrument: MarketInstrumentRequest) => Promise<MarketDetail>;

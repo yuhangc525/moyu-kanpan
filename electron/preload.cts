@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AiSettings, UserSettings } from "../src/config.js";
+import type { AiSettings, Security, UserSettings } from "../src/config.js";
 import type {
   AiRuntimeStatus,
   AppSnapshot,
@@ -10,6 +10,10 @@ import type { FloatingStockApi } from "../src/global.js";
 import type { ProfileImportMode, ProfilePreview } from "../src/settings/profile.js";
 
 const api: FloatingStockApi = {
+  searchSecurities: (query) =>
+    ipcRenderer.invoke("securities:search", query) as Promise<Security[]>,
+  addWatchStock: (security) =>
+    ipcRenderer.invoke("watchlist:add", security) as Promise<UserSettings>,
   notifyOnline: () => ipcRenderer.invoke("app:online") as Promise<void>,
   getSnapshot: () => ipcRenderer.invoke("snapshot:get") as Promise<AppSnapshot>,
   getMarketDetail: (instrument: MarketInstrumentRequest) =>

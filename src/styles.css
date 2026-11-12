@@ -1229,3 +1229,16 @@ h1 {
 :root[data-theme="stealth"] .driver-fallback {
   color: rgb(220 221 222 / 0.58);
 }
+
+.watchlist-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.watchlist-page > .quote-list { flex: 1; }
+.stock-search { flex-shrink: 0; padding: 8px 10px; border-bottom: 1px solid rgb(255 255 255 / 0.12); }
+.stock-search-form { display: flex; gap: 6px; }
+.stock-search-form input { flex: 1; min-width: 0; width: 0; padding: 6px 8px; color: inherit; background: rgb(255 255 255 / 0.06); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 5px; }
+.stock-search button { color: inherit; background: rgb(255 255 255 / 0.08); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 5px; padding: 5px 8px; cursor: pointer; white-space: nowrap; }
+.stock-search button:disabled { opacity: 0.5; cursor: default; }
+.stock-search-message { font-size: 11px; margin-top: 4px; }
+.stock-search-message:empty { display: none; }
+.stock-search-results { max-height: 160px; overflow-y: auto; }
+.stock-search-result { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 0; font-size: 12px; }
+.stock-search-result small { opacity: 0.65; }

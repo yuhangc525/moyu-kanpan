@@ -1,6 +1,6 @@
 import { importantDriverDecision } from "./domain/news.js";
 import { benchmarkCodeForSecurity, buildDecisionCue } from "./domain/decision.js";
-import type { QuoteField, TabConfig, UserSettings } from "./config";
+import type { QuoteField, Security, TabConfig, UserSettings } from "./config";
 import type {
   AppSnapshot,
   DailyCandle,
@@ -29,6 +29,76 @@ import {
   type ChartPointLayout
 } from "./presentation/chartInteraction.js";
 import { describeAppSnapshotProblem } from "./domain/appSnapshotShape.js";
+
+let stockQuery = "";
+let stockResults: Security[] = [];
+let stockMessage = "";
+let stockBusy = false;
+let stockSearchVersion = 0;
+
+function renderStockSearch(): string {
+  const added = new Set(snapshot.settings.watchlist.map((item) => item.securityCode));
+  return `<section class="stock-search" aria-label="添加自选股票">
+    <form class="stock-search-form">
+      <input id="stock-query" aria-label="股票代码或简称" placeholder="输入股票代码或简称" maxlength="40" value="${escapeAttr(stockQuery)}" autocomplete="off">
+      <button type="submit" ${stockBusy ? "disabled" : ""}>${stockBusy ? "处理中…" : "搜索添加"}</button>
+    </form>
+    <div role="status" class="stock-search-message">${escapeHtml(stockMessage)}</div>
+    <div class="stock-search-results">${stockResults
+      .map(
+        (item, index) => `<div class="stock-search-result">
+      <span>${escapeHtml(item.name)} <small>${item.market}.${item.code}</small></span>
+      <button data-action="add-watch-stock" data-index="${index}" ${stockBusy || added.has(item.code) ? "disabled" : ""}>${added.has(item.code) ? "已添加" : "加入自选"}</button>
+    </div>`
+      )
+      .join("")}</div>
+  </section>`;
+}
+
+async function searchStocks(): Promise<void> {
+  if (!window.floatingStock || stockBusy) return;
+  const query = stockQuery.trim();
+  if (!query) {
+    stockMessage = "请输入股票代码或简称";
+    render(snapshot);
+    return;
+  }
+  const version = ++stockSearchVersion;
+  stockBusy = true;
+  stockResults = [];
+  stockMessage = "正在搜索…";
+  render(snapshot);
+  try {
+    const results = await window.floatingStock.searchSecurities(query);
+    if (version !== stockSearchVersion) return;
+    stockResults = results;
+    stockMessage = results.length ? "请选择要加入自选的股票" : "未找到股票，请尝试完整代码或简称";
+  } catch {
+    if (version === stockSearchVersion) stockMessage = "搜索失败，请检查网络后重试";
+  } finally {
+    if (version === stockSearchVersion) {
+      stockBusy = false;
+      render(snapshot);
+    }
+  }
+}
+
+async function addWatchStock(index: number): Promise<void> {
+  const security = stockResults[index];
+  if (!security || stockBusy || !window.floatingStock) return;
+  stockBusy = true;
+  render(snapshot);
+  try {
+    const settings = await window.floatingStock.addWatchStock(security);
+    snapshot = { ...snapshot, settings };
+    stockMessage = `${security.name} 已加入自选`;
+  } catch (error) {
+    stockMessage = error instanceof Error ? error.message : "添加失败，请重试";
+  } finally {
+    stockBusy = false;
+    render(snapshot);
+  }
+}
 
 const defaultSettings: UserSettings = {
   schemaVersion: 9,
@@ -269,6 +339,14 @@ if (!root) throw new Error("Missing #root");
 const rootElement = root;
 
 function render(next: AppSnapshot): void {
+  const focusedQuery =
+    document.activeElement instanceof HTMLInputElement &&
+    document.activeElement.id === "stock-query"
+      ? document.activeElement
+      : null;
+  const querySelection = focusedQuery
+    ? [focusedQuery.selectionStart, focusedQuery.selectionEnd]
+    : null;
   // 真正的滚动容器是 .scroll-list（styles.css 里 .page-body 是 overflow: hidden，从不滚动），
   // 而它在下面被 innerHTML 整体替换。合并页同时有行情与新闻两个列表，因此按顺序逐个保存/恢复。
   const previousScrollTops = [...rootElement.querySelectorAll<HTMLElement>(".scroll-list")].map(
@@ -324,6 +402,11 @@ function render(next: AppSnapshot): void {
       const previous = previousScrollTops[index];
       if (previous != null) element.scrollTop = previous;
     });
+  }
+  if (querySelection) {
+    const input = rootElement.querySelector<HTMLInputElement>("#stock-query");
+    input?.focus();
+    input?.setSelectionRange(querySelection[0], querySelection[1]);
   }
   restoreChartHover();
   lastRenderedPageKey = pageKey;
@@ -459,7 +542,8 @@ function tabBarSignature(settings: UserSettings, currentId: string): string {
 function renderPage(tab: TabConfig, next: AppSnapshot): string {
   if (marketDetailRequest) return renderMarketDetail();
   if (tab.type === "holdings") return renderHoldings(next);
-  if (tab.type === "watchlist") return renderQuoteList(watchlistCodes(next.settings), next);
+  if (tab.type === "watchlist")
+    return `<div class="watchlist-page">${renderStockSearch()}${watchlistCodes(next.settings).length ? renderQuoteList(watchlistCodes(next.settings), next) : '<div class="empty-state">搜索股票，添加第一只自选股</div>'}</div>`;
   if (tab.type === "stock-list") return renderQuoteList(tab.securityCodes, next);
   if (tab.type === "drivers") return renderNews(next, tab.maxItems, tab.newsMode);
   if (tab.type === "combined") return renderCombined(next, tab);
@@ -1346,6 +1430,16 @@ function applyAppearance(settings: UserSettings): void {
 rootElement.addEventListener("click", (event) => {
   void handleRootClick(event);
 });
+rootElement.addEventListener("input", (event) => {
+  const input = event.target as HTMLInputElement;
+  if (input.id === "stock-query") stockQuery = input.value;
+});
+rootElement.addEventListener("submit", (event) => {
+  if ((event.target as HTMLElement).matches(".stock-search-form")) {
+    event.preventDefault();
+    void searchStocks();
+  }
+});
 rootElement.addEventListener("pointermove", handleChartPointerMove);
 rootElement.addEventListener("pointerleave", hideChartHover);
 
@@ -1353,6 +1447,10 @@ async function handleRootClick(event: MouseEvent): Promise<void> {
   const control = (event.target as HTMLElement).closest<HTMLElement>("[data-action], [data-url]");
   if (!control) return;
 
+  if (control.dataset.action === "add-watch-stock") {
+    await addWatchStock(Number(control.dataset.index));
+    return;
+  }
   if (control.dataset.action === "tab" && control.dataset.tabId) {
     await activateTab(control.dataset.tabId);
     return;
