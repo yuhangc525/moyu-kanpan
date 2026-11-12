@@ -1,3 +1,4 @@
+import type { HoldingEditRequest } from "./domain/holdingEdit.js";
 import type { AiSettings, Security, UserSettings } from "./config.js";
 import type {
   AiRuntimeStatus,
@@ -14,6 +15,7 @@ export interface ProfileApplyResult {
 }
 
 export interface FloatingStockApi {
+  updateHolding: (request: HoldingEditRequest) => Promise<UserSettings>;
   searchSecurities: (query: string) => Promise<Security[]>;
   addWatchStock: (security: Security, groupId?: string) => Promise<UserSettings>;
   notifyOnline: () => Promise<void>;

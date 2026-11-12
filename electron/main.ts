@@ -1,3 +1,4 @@
+import { applyHoldingEdit } from "../src/domain/holdingEdit.js";
 import { searchSecurities } from "../src/services/securitySearch.js";
 import {
   app,
@@ -1501,6 +1502,9 @@ function registerIpc(): void {
       groupId
     });
     return saveSettings(next);
+  });
+  handleTrusted("holdings:update", (_event, value: unknown) => {
+    return saveSettings(applyHoldingEdit(settingsForRenderer(config), value));
   });
   handleTrusted("settings:save", async (_event, value: unknown) => {
     // 渲染器已被 sender 校验过，但载荷体积仍要有上限（配置导入包有 2 MB 上限）。

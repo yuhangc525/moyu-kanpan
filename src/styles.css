@@ -1246,3 +1246,19 @@ h1 {
 .watchlist-group-filter { display: flex; align-items: center; gap: 8px; padding: 6px 10px 0; font-size: 12px; flex-shrink: 0; }
 .watchlist-group-filter select { min-width: 0; max-width: 100%; color: inherit; background: rgb(255 255 255 / 0.08); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 5px; padding: 4px 8px; }
 .watchlist-group-filter option { color: #edf2f4; background: rgb(8 13 16 / var(--widget-opacity)); }
+
+.holding-edit-button,
+.holding-edit-actions button { color: inherit; background: rgb(255 255 255 / 0.08); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
+.holding-edit-button { justify-self: start; }
+.holding-edit-button:disabled,
+.holding-edit-actions button:disabled { opacity: 0.5; cursor: default; }
+.holding-editor { padding: 10px; border: 1px solid rgb(255 255 255 / 0.12); border-radius: 6px; display: grid; gap: 8px; font-size: 12px; }
+.holding-edit-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.holding-edit-fields label { min-width: 0; display: grid; gap: 4px; font-size: 11px; }
+.holding-edit-wide { grid-column: 1 / -1; }
+.holding-edit-fields input,
+.holding-edit-fields select { width: 100%; min-width: 0; padding: 6px; color: inherit; background: rgb(255 255 255 / 0.06); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 5px; font: inherit; }
+.holding-edit-fields option { color: #edf2f4; background: rgb(8 13 16 / var(--widget-opacity)); }
+.holding-edit-actions { display: flex; gap: 8px; }
+.holding-edit-message { font-size: 11px; overflow-wrap: anywhere; }
+.holding-edit-message:empty { display: none; }

@@ -1,3 +1,8 @@
+import {
+  createHoldingEditDraft,
+  renderHoldingEditor,
+  type HoldingEditDraft
+} from "./presentation/holdingEditor.js";
 import { visibleWatchlistCodes } from "./domain/watchlistGroups.js";
 import { importantDriverDecision } from "./domain/news.js";
 import { benchmarkCodeForSecurity, buildDecisionCue } from "./domain/decision.js";
@@ -30,6 +35,47 @@ import {
   type ChartPointLayout
 } from "./presentation/chartInteraction.js";
 import { describeAppSnapshotProblem } from "./domain/appSnapshotShape.js";
+
+let holdingDraft: HoldingEditDraft | null = null;
+let holdingEditBusy = false;
+let holdingEditMessage = "";
+let holdingComposing = false;
+
+function updateHoldingDraft(input: HTMLInputElement | HTMLSelectElement): void {
+  const field = input.dataset.holdingField;
+  if (
+    holdingDraft &&
+    !holdingEditBusy &&
+    (field === "quantity" || field === "costPrice" || field === "groupId" || field === "note")
+  )
+    holdingDraft[field] = input.value;
+}
+
+async function saveHoldingEdit(): Promise<void> {
+  if (!holdingDraft || holdingEditBusy || !window.floatingStock) return;
+  const draft = holdingDraft;
+  holdingEditBusy = true;
+  holdingEditMessage = "";
+  render(snapshot);
+  try {
+    const settings = await window.floatingStock.updateHolding({
+      securityCode: draft.securityCode,
+      quantity: Number(draft.quantity),
+      costPrice: Number(draft.costPrice),
+      groupId: draft.groupId,
+      note: draft.note,
+      expected: draft.expected
+    });
+    snapshot = { ...snapshot, settings };
+    holdingDraft = null;
+    holdingEditMessage = "持仓已保存";
+  } catch (error) {
+    holdingEditMessage = error instanceof Error ? error.message : "保存失败，请重试";
+  } finally {
+    holdingEditBusy = false;
+    render(snapshot);
+  }
+}
 
 let selectedWatchlistGroup = "";
 let stockQuery = "";
@@ -345,13 +391,22 @@ if (!root) throw new Error("Missing #root");
 const rootElement = root;
 
 function render(next: AppSnapshot): void {
-  const focusedQuery =
+  // Keep an active IME composition intact while quote snapshots arrive.
+  if (
+    holdingComposing ||
+    (document.activeElement instanceof HTMLSelectElement &&
+      document.activeElement.dataset.holdingField)
+  ) {
+    snapshot = next;
+    return;
+  }
+  const focusedInput =
     document.activeElement instanceof HTMLInputElement &&
-    document.activeElement.id === "stock-query"
+    (document.activeElement.id === "stock-query" || document.activeElement.dataset.holdingField)
       ? document.activeElement
       : null;
-  const querySelection = focusedQuery
-    ? [focusedQuery.selectionStart, focusedQuery.selectionEnd]
+  const inputSelection = focusedInput
+    ? { id: focusedInput.id, start: focusedInput.selectionStart, end: focusedInput.selectionEnd }
     : null;
   // 真正的滚动容器是 .scroll-list（styles.css 里 .page-body 是 overflow: hidden，从不滚动），
   // 而它在下面被 innerHTML 整体替换。合并页同时有行情与新闻两个列表，因此按顺序逐个保存/恢复。
@@ -409,10 +464,10 @@ function render(next: AppSnapshot): void {
       if (previous != null) element.scrollTop = previous;
     });
   }
-  if (querySelection) {
-    const input = rootElement.querySelector<HTMLInputElement>("#stock-query");
+  if (inputSelection) {
+    const input = document.getElementById(inputSelection.id) as HTMLInputElement | null;
     input?.focus();
-    input?.setSelectionRange(querySelection[0], querySelection[1]);
+    input?.setSelectionRange(inputSelection.start, inputSelection.end);
   }
   restoreChartHover();
   lastRenderedPageKey = pageKey;
@@ -568,6 +623,13 @@ function renderPage(tab: TabConfig, next: AppSnapshot): string {
 }
 
 function renderHoldings(next: AppSnapshot): string {
+  if (
+    holdingDraft &&
+    !next.settings.holdings.some((item) => item.securityCode === holdingDraft?.securityCode)
+  ) {
+    holdingDraft = null;
+    holdingEditMessage = "该持仓已被移除";
+  }
   const quoteMap = new Map(next.quotes.map((quote) => [quote.code, quote]));
   const riskMap = new Map(next.risk.holdings.map((item) => [item.securityCode, item]));
   const rows = next.settings.holdings
@@ -606,7 +668,7 @@ function renderHoldings(next: AppSnapshot): string {
         ${next.settings.holdings.length ? '<p class="pnl-note">* 当日有买卖时，今日盈亏仅供参考</p>' : ""}
       </div>
       ${renderRiskStatus(next)}
-      <div class="scroll-list holding-list">${rows}</div>
+      <div class="scroll-list holding-list">${!holdingDraft && holdingEditMessage ? `<div role="status" class="holding-edit-message">${escapeHtml(holdingEditMessage)}</div>` : ""}${rows}</div>
     </div>
   `;
 }
@@ -617,6 +679,8 @@ function renderHoldingRow(
   risk: HoldingRiskMetrics | undefined,
   settings: UserSettings
 ): string {
+  if (holdingDraft?.securityCode === holding.securityCode)
+    return renderHoldingEditor(holdingDraft, settings, holdingEditBusy, holdingEditMessage);
   const security = securityFor(settings, holding.securityCode);
   const price = quote?.price;
   // 累计盈亏直接用风险模型的指标：它用 finitePositive 清洗过价格，且数据不安全时整体为
@@ -631,6 +695,7 @@ function renderHoldingRow(
       <div class="quote-name">
         <strong>${escapeHtml(security?.alias || security?.name || quote?.name || holding.securityCode)}</strong>
         <span>${security?.market ?? quote?.market ?? ""}.${holding.securityCode} · ${formatQuantity(holding.quantity)}股 @ ${formatNumber(holding.costPrice)}${renderQuoteQuality(quote)}${renderHoldingRiskHint(risk)}</span>
+        <button type="button" class="holding-edit-button" data-action="edit-holding" data-code="${escapeAttr(holding.securityCode)}" ${holdingDraft || holdingEditBusy ? "disabled" : ""}>编辑</button>
       </div>
       <div class="holding-metrics">
         <span><small>现价</small><strong>${formatNumber(price)}</strong></span>
@@ -1447,8 +1512,30 @@ rootElement.addEventListener("click", (event) => {
 rootElement.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement;
   if (input.id === "stock-query") stockQuery = input.value;
+  updateHoldingDraft(input);
+});
+rootElement.addEventListener("compositionstart", (event) => {
+  if ((event.target as HTMLElement).dataset.holdingField) holdingComposing = true;
+});
+rootElement.addEventListener("compositionend", (event) => {
+  if ((event.target as HTMLElement).dataset.holdingField) {
+    holdingComposing = false;
+    updateHoldingDraft(event.target as HTMLInputElement);
+  }
+});
+rootElement.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && holdingDraft && !holdingEditBusy && !event.isComposing) {
+    holdingDraft = null;
+    holdingEditMessage = "";
+    render(snapshot);
+  }
 });
 rootElement.addEventListener("submit", (event) => {
+  if ((event.target as HTMLElement).matches(".holding-editor")) {
+    event.preventDefault();
+    void saveHoldingEdit();
+    return;
+  }
   if ((event.target as HTMLElement).matches(".stock-search-form")) {
     event.preventDefault();
     void searchStocks();
@@ -1461,6 +1548,27 @@ async function handleRootClick(event: MouseEvent): Promise<void> {
   const control = (event.target as HTMLElement).closest<HTMLElement>("[data-action], [data-url]");
   if (!control) return;
 
+  if (control.dataset.action === "edit-holding") {
+    if (holdingEditBusy || holdingDraft) return;
+    const holding = snapshot.settings.holdings.find(
+      (item) => item.securityCode === control.dataset.code
+    );
+    if (holding) {
+      holdingDraft = createHoldingEditDraft(holding);
+      holdingEditMessage = "";
+      render(snapshot);
+      document.getElementById("holding-edit-quantity")?.focus();
+    }
+    return;
+  }
+  if (control.dataset.action === "cancel-holding-edit") {
+    if (!holdingEditBusy) {
+      holdingDraft = null;
+      holdingEditMessage = "";
+      render(snapshot);
+    }
+    return;
+  }
   if (control.dataset.action === "add-watch-stock") {
     await addWatchStock(Number(control.dataset.index));
     return;
@@ -1554,6 +1662,7 @@ rootElement.addEventListener("change", (event) => {
 
 async function handleRootChange(event: Event): Promise<void> {
   const select = event.target as HTMLSelectElement;
+  updateHoldingDraft(select);
   if (select.dataset.action === "watchlist-group") {
     selectedWatchlistGroup = select.value;
     render(snapshot);

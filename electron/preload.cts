@@ -10,6 +10,8 @@ import type { FloatingStockApi } from "../src/global.js";
 import type { ProfileImportMode, ProfilePreview } from "../src/settings/profile.js";
 
 const api: FloatingStockApi = {
+  updateHolding: (request) =>
+    ipcRenderer.invoke("holdings:update", request) as Promise<UserSettings>,
   searchSecurities: (query) =>
     ipcRenderer.invoke("securities:search", query) as Promise<Security[]>,
   addWatchStock: (security, groupId) =>
