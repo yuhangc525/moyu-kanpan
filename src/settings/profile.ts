@@ -33,6 +33,7 @@ export interface ProfileDiff {
   watchlistAdded: string[];
   watchlistUpdated: string[];
   watchlistRemoved: string[];
+  watchlistGroupsChanged?: boolean;
   alertRuleChanges: number;
   riskSettingsChanged: boolean;
 }
@@ -51,6 +52,7 @@ interface ParsedProfile {
   holdings?: Holding[];
   holdingRulePresence: Set<string>;
   watchlist?: WatchlistMembership[];
+  watchlistGroups?: UserSettings["watchlistGroups"];
   riskGroups?: RiskSettings["groups"];
   riskPatch?: RiskPatch;
   /**
@@ -88,6 +90,7 @@ const ROOT_KEYS = new Set([
   "holdings",
   "watchlist",
   "riskGroups",
+  "watchlistGroups",
   "risk"
 ]);
 const ALERT_KEYS = new Set(Object.keys(EMPTY_ALERT_RULES));
@@ -185,6 +188,7 @@ export function hasProfileChanges(diff: ProfileDiff): boolean {
     diff.watchlistAdded.length > 0 ||
     diff.watchlistUpdated.length > 0 ||
     diff.watchlistRemoved.length > 0 ||
+    diff.watchlistGroupsChanged === true ||
     diff.alertRuleChanges > 0 ||
     diff.riskSettingsChanged
   );
@@ -205,6 +209,7 @@ export function exportProfile(settings: UserSettings): string {
       alertRules: { ...holding.alertRules }
     })),
     watchlist: settings.watchlist.map((item) => ({ ...item })),
+    watchlistGroups: settings.watchlistGroups.map((item) => ({ ...item })),
     riskGroups: settings.risk.groups.map((group) => ({ ...group })),
     risk: {
       mode: settings.risk.mode,
@@ -337,8 +342,45 @@ function validateProfile(
     parsed.holdingRulePresence = result.rulePresence;
     parsed.touchesRiskSettings ||= result.rulePresence.size > 0;
   }
+  if (raw.watchlistGroups !== undefined) {
+    if (!Array.isArray(raw.watchlistGroups)) issues.push(error("$.watchlistGroups", "必须是数组"));
+    else {
+      const groups: UserSettings["watchlistGroups"] = [];
+      const ids = new Set<string>();
+      const names = new Set<string>();
+      for (const entry of raw.watchlistGroups as unknown[]) {
+        if (
+          !isRecord(entry) ||
+          typeof entry.id !== "string" ||
+          !/^[a-zA-Z0-9_-]{1,64}$/.test(entry.id) ||
+          typeof entry.name !== "string" ||
+          !entry.name.trim() ||
+          entry.name.trim().length > 16 ||
+          ids.has(entry.id) ||
+          names.has(entry.name.trim())
+        ) {
+          issues.push(error("$.watchlistGroups", "分组标识或名称无效、重复"));
+          continue;
+        }
+        rejectUnknown(entry, new Set(["id", "name"]), "$.watchlistGroups", issues);
+        ids.add(entry.id);
+        names.add(entry.name.trim());
+        groups.push({ id: entry.id, name: entry.name.trim() });
+      }
+      if (groups.length > 20 || !ids.has("all"))
+        issues.push(error("$.watchlistGroups", "最多20个分组且必须保留默认分组"));
+      parsed.watchlistGroups = groups;
+    }
+  }
+  const watchGroupIds = new Set([
+    "all",
+    ...(mode === "merge" || !parsed.watchlistGroups
+      ? current.watchlistGroups.map((group) => group.id)
+      : []),
+    ...(parsed.watchlistGroups ?? []).map((group) => group.id)
+  ]);
   if (raw.watchlist !== undefined)
-    parsed.watchlist = validateWatchlist(raw.watchlist, known, groupIds, issues);
+    parsed.watchlist = validateWatchlist(raw.watchlist, known, watchGroupIds, issues);
   if (raw.risk !== undefined) {
     parsed.riskPatch = validateRisk(raw.risk, issues);
     parsed.touchesRiskSettings = true;
@@ -348,6 +390,7 @@ function validateProfile(
     !parsed.securities &&
     !parsed.holdings &&
     !parsed.watchlist &&
+    !parsed.watchlistGroups &&
     !parsed.riskGroups &&
     !parsed.riskPatch
   ) {
@@ -497,7 +540,7 @@ function validateWatchlist(
     seen.add(code);
     const groupId =
       typeof record.groupId === "string" && record.groupId.trim() ? record.groupId.trim() : "all";
-    if (!groupIds.has(groupId)) issues.push(error(`${path}.groupId`, "风险组不存在"));
+    if (!groupIds.has(groupId)) issues.push(error(`${path}.groupId`, "自选分组不存在"));
     const requestedOrder =
       record.order === undefined
         ? result.length
@@ -647,6 +690,14 @@ function applyParsedProfile(
   issues: ProfileIssue[]
 ): UserSettings {
   const next = structuredClone(current);
+  if (parsed.watchlistGroups) {
+    next.watchlistGroups =
+      mode === "replace"
+        ? parsed.watchlistGroups
+        : mergeBy(next.watchlistGroups, parsed.watchlistGroups, (item) => item.id);
+    const ids = new Set(next.watchlistGroups.map((group) => group.id));
+    for (const item of next.watchlist) if (!ids.has(item.groupId)) item.groupId = "all";
+  }
   if (parsed.riskGroups) {
     next.risk.groups =
       mode === "replace"
@@ -724,6 +775,8 @@ function createDiff(before: UserSettings, after: UserSettings): ProfileDiff {
   const riskBefore = { ...before.risk, groups: before.risk.groups, mode: before.risk.mode };
   const riskAfter = { ...after.risk, groups: after.risk.groups, mode: after.risk.mode };
   return {
+    watchlistGroupsChanged:
+      JSON.stringify(before.watchlistGroups) !== JSON.stringify(after.watchlistGroups),
     securitiesAdded: [...afterSecurities.keys()].filter((code) => !beforeSecurities.has(code)),
     securitiesUpdated: [...afterSecurities.keys()].filter(
       (code) =>

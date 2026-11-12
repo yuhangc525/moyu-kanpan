@@ -12,8 +12,8 @@ import type { ProfileImportMode, ProfilePreview } from "../src/settings/profile.
 const api: FloatingStockApi = {
   searchSecurities: (query) =>
     ipcRenderer.invoke("securities:search", query) as Promise<Security[]>,
-  addWatchStock: (security) =>
-    ipcRenderer.invoke("watchlist:add", security) as Promise<UserSettings>,
+  addWatchStock: (security, groupId) =>
+    ipcRenderer.invoke("watchlist:add", security, groupId) as Promise<UserSettings>,
   notifyOnline: () => ipcRenderer.invoke("app:online") as Promise<void>,
   getSnapshot: () => ipcRenderer.invoke("snapshot:get") as Promise<AppSnapshot>,
   getMarketDetail: (instrument: MarketInstrumentRequest) =>

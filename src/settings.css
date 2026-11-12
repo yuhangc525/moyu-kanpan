@@ -116,7 +116,7 @@ footer {
 
 .watch-row {
   display: grid;
-  grid-template-columns: 58px 92px minmax(120px, 1fr) auto;
+  grid-template-columns: 58px 92px minmax(100px, 1fr) minmax(100px, 140px) auto;
   align-items: center;
   gap: 7px;
 }
@@ -1071,4 +1071,16 @@ footer {
     align-items: flex-start;
     flex-wrap: wrap;
   }
+}
+
+.watch-group-row { display: flex; align-items: center; gap: 8px; }
+.watch-group-row input { flex: 1; }
+
+.watch-group-add { grid-template-columns: minmax(0, 1fr) auto; }
+.watch-stock-add { grid-template-columns: 140px minmax(100px, 1fr) minmax(100px, 140px) 72px; }
+@media (max-width: 620px) {
+  .watch-row { grid-template-columns: 58px 75px minmax(80px, 1fr) auto; }
+  .watch-row > select { grid-column: 2 / 4; grid-row: 2; }
+  .watch-row > .row-actions { grid-column: 4; grid-row: 1 / 3; }
+  .watch-stock-add { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

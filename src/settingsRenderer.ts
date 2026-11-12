@@ -1,3 +1,4 @@
+import { removeWatchlistGroup } from "./domain/watchlistGroups.js";
 import { DEFAULT_BOSS_KEY_ACCELERATOR, parseBossKeyAccelerator } from "./shortcut.js";
 import type { HoldingAlertRules, QuoteField, TabType, UserSettings } from "./config";
 import { escapeAttr, escapeHtml } from "./presentation/format.js";
@@ -270,6 +271,21 @@ function render(): void {
       </section>
 
       <section class="panel ${settingsPageClass("quotes", activeSettingsPage)}">
+        <div class="panel-heading"><div><h2>自选分组</h2><p>每只自选归属一个分组；删除分组后，其中股票移回默认分组。修改后点击保存。</p></div><span>${settings.watchlistGroups.length}/20</span></div>
+        <div class="watchlist">
+          ${settings.watchlistGroups
+            .map(
+              (group, index) => `<div class="watch-group-row" data-group-index="${index}">
+            <input data-setting="watch-group-name" aria-label="自选分组名称" maxlength="16" value="${escapeAttr(group.name)}">
+            <button data-action="delete-watch-group" ${group.id === "all" ? "disabled" : ""}>${group.id === "all" ? "默认分组" : "删除分组"}</button>
+          </div>`
+            )
+            .join("")}
+        </div>
+        <div class="add-row watch-group-add"><input id="new-watch-group" maxlength="16" placeholder="新分组名称"><button data-action="add-watch-group">新增分组</button></div>
+      </section>
+
+      <section class="panel ${settingsPageClass("quotes", activeSettingsPage)}">
         <div class="panel-heading">
           <div>
             <h2>自选股</h2>
@@ -280,13 +296,20 @@ function render(): void {
         <div class="watchlist">
           ${settings.watchlist
             .map((item, index, list) =>
-              renderWatchItem(item, index, list.length, securityFor(item.securityCode)?.alias || "")
+              renderWatchItem(
+                item,
+                index,
+                list.length,
+                securityFor(item.securityCode)?.alias || "",
+                current.watchlistGroups
+              )
             )
             .join("")}
         </div>
-        <div class="add-row">
+        <div class="add-row watch-stock-add">
           <input id="new-code" inputmode="numeric" maxlength="6" placeholder="股票代码，如 600519" />
           <input id="new-alias" maxlength="16" placeholder="名称或别名（可选）" />
+          <select id="new-stock-group" aria-label="新增股票所属分组">${settings.watchlistGroups.map((group) => option(group.id, group.name, "all")).join("")}</select>
           <button data-action="add-stock">添加</button>
         </div>
       </section>
@@ -489,6 +512,14 @@ function handleFormChange(event: Event): void {
 
   settingsDirty = true;
 
+  if (setting === "watch-group-name") {
+    const index = Number(target.closest<HTMLElement>(".watch-group-row")?.dataset.groupIndex);
+    const group = settings.watchlistGroups[index];
+    if (group) group.name = target.value.trimStart().slice(0, 16);
+    if (event.type === "change") render();
+    return;
+  }
+
   if (
     applyRowField(target, ".watch-row", "index", settings.watchlist, WATCH_ROW_FIELDS, setting) ||
     applyRowField(
@@ -610,6 +641,31 @@ async function handleClick(event: Event): Promise<void> {
   }
 
   settingsDirty = true;
+
+  if (action === "add-watch-group") {
+    const input = document.getElementById("new-watch-group") as HTMLInputElement | null;
+    const name = input?.value.trim() ?? "";
+    if (!name || settings.watchlistGroups.some((group) => group.name.trim() === name)) {
+      showMessage("请输入不重复的分组名称", "error");
+      return;
+    }
+    if (settings.watchlistGroups.length >= 20) {
+      showMessage("自选分组最多20个", "error");
+      return;
+    }
+    settings.watchlistGroups.push({ id: `watch-${crypto.randomUUID()}`, name });
+    clearMessage();
+    render();
+    return;
+  }
+  if (action === "delete-watch-group") {
+    const index = Number(button.closest<HTMLElement>(".watch-group-row")?.dataset.groupIndex);
+    const group = settings.watchlistGroups[index];
+    if (group) removeWatchlistGroup(settings, group.id);
+    clearMessage();
+    render();
+    return;
+  }
 
   const watchRow = button.closest<HTMLElement>(".watch-row");
   const index = Number(watchRow?.dataset.index);
@@ -779,7 +835,8 @@ function addStock(): void {
     securityCode: code,
     visible: true,
     order: settings.watchlist.length,
-    groupId: "all"
+    groupId:
+      (document.getElementById("new-stock-group") as HTMLSelectElement | null)?.value || "all"
   });
   clearMessage();
   render();

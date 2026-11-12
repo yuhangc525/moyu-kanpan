@@ -15,7 +15,7 @@ export interface ProfileApplyResult {
 
 export interface FloatingStockApi {
   searchSecurities: (query: string) => Promise<Security[]>;
-  addWatchStock: (security: Security) => Promise<UserSettings>;
+  addWatchStock: (security: Security, groupId?: string) => Promise<UserSettings>;
   notifyOnline: () => Promise<void>;
   getSnapshot: () => Promise<AppSnapshot>;
   getMarketDetail: (instrument: MarketInstrumentRequest) => Promise<MarketDetail>;

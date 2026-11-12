@@ -27,6 +27,7 @@ await compileTypeScript("src/presentation/excelCustomSheet.ts", "presentation/ex
 await compileTypeScript("src/presentation/excelTrend.ts", "presentation/excelTrend.js");
 await compileTypeScript("src/presentation/publicSnapshot.ts", "presentation/publicSnapshot.js");
 await compileTypeScript("src/shortcut.ts", "shortcut.js");
+await compileTypeScript("src/domain/watchlistGroups.ts", "domain/watchlistGroups.js");
 await compileTypeScript("src/domain/news.ts", "domain/news.js");
 await compileTypeScript("src/domain/errors.ts", "domain/errors.js");
 await compileTypeScript("src/domain/appSnapshotShape.ts", "domain/appSnapshotShape.js");

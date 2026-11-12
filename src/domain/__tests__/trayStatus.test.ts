@@ -111,6 +111,7 @@ function snapshot(): AppSnapshot {
         { code: "000001", market: "SZ", name: "乙", alias: "" }
       ],
       holdings: [],
+      watchlistGroups: [{ id: "all", name: "默认分组" }],
       watchlist: [
         { securityCode: "600519", visible: true, order: 0, groupId: "all" },
         { securityCode: "000001", visible: true, order: 1, groupId: "all" }

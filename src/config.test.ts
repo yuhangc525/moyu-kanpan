@@ -118,7 +118,7 @@ describe("config", () => {
     assert.equal(settings.appearance.theme, "stealth");
     assert.equal(settings.ai.model, "deepseek-v4-flash");
     assert.equal("apiKey" in settings.ai, false);
-    assert.equal(settings.schemaVersion, 9);
+    assert.equal(settings.schemaVersion, 10);
     assert.equal(settings.window.trayOnly, true);
   });
 
@@ -165,7 +165,7 @@ describe("config", () => {
       ]
     });
 
-    assert.equal(config.schemaVersion, 9);
+    assert.equal(config.schemaVersion, 10);
     assert.equal(config.risk.mode, "active");
     assert.equal(config.risk.oneR, 500);
     assert.equal(config.risk.notifications.windows, true);

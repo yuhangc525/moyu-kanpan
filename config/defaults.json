@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 9,
+  "schemaVersion": 10,
   "securities": [
     { "code": "000001", "market": "SZ", "name": "", "alias": "" },
     { "code": "600519", "market": "SH", "name": "", "alias": "" },
@@ -7,6 +7,7 @@
     { "code": "000858", "market": "SZ", "name": "", "alias": "" }
   ],
   "holdings": [],
+  "watchlistGroups": [{ "id": "all", "name": "默认分组" }],
   "watchlist": [
     { "securityCode": "000001", "visible": true, "order": 0, "groupId": "all" },
     { "securityCode": "600519", "visible": true, "order": 1, "groupId": "all" },

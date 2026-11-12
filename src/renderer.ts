@@ -1,3 +1,4 @@
+import { visibleWatchlistCodes } from "./domain/watchlistGroups.js";
 import { importantDriverDecision } from "./domain/news.js";
 import { benchmarkCodeForSecurity, buildDecisionCue } from "./domain/decision.js";
 import type { QuoteField, Security, TabConfig, UserSettings } from "./config";
@@ -30,6 +31,7 @@ import {
 } from "./presentation/chartInteraction.js";
 import { describeAppSnapshotProblem } from "./domain/appSnapshotShape.js";
 
+let selectedWatchlistGroup = "";
 let stockQuery = "";
 let stockResults: Security[] = [];
 let stockMessage = "";
@@ -89,7 +91,10 @@ async function addWatchStock(index: number): Promise<void> {
   stockBusy = true;
   render(snapshot);
   try {
-    const settings = await window.floatingStock.addWatchStock(security);
+    const settings = await window.floatingStock.addWatchStock(
+      security,
+      selectedWatchlistGroup || "all"
+    );
     snapshot = { ...snapshot, settings };
     stockMessage = `${security.name} 已加入自选`;
   } catch (error) {
@@ -101,13 +106,14 @@ async function addWatchStock(index: number): Promise<void> {
 }
 
 const defaultSettings: UserSettings = {
-  schemaVersion: 9,
+  schemaVersion: 10,
   personalSeedVersion: 0,
   securities: [
     { code: "000001", market: "SZ", name: "", alias: "" },
     { code: "600519", market: "SH", name: "", alias: "" }
   ],
   holdings: [],
+  watchlistGroups: [{ id: "all", name: "默认分组" }],
   watchlist: [
     { securityCode: "000001", visible: true, order: 0, groupId: "all" },
     { securityCode: "600519", visible: true, order: 1, groupId: "all" }
@@ -542,8 +548,19 @@ function tabBarSignature(settings: UserSettings, currentId: string): string {
 function renderPage(tab: TabConfig, next: AppSnapshot): string {
   if (marketDetailRequest) return renderMarketDetail();
   if (tab.type === "holdings") return renderHoldings(next);
-  if (tab.type === "watchlist")
-    return `<div class="watchlist-page">${renderStockSearch()}${watchlistCodes(next.settings).length ? renderQuoteList(watchlistCodes(next.settings), next) : '<div class="empty-state">搜索股票，添加第一只自选股</div>'}</div>`;
+  if (tab.type === "watchlist") {
+    if (
+      selectedWatchlistGroup &&
+      !next.settings.watchlistGroups.some((group) => group.id === selectedWatchlistGroup)
+    )
+      selectedWatchlistGroup = "";
+    const codes = visibleWatchlistCodes(next.settings, selectedWatchlistGroup);
+    const filter = `<label class="watchlist-group-filter">分组 <select data-action="watchlist-group" aria-label="自选分组">
+      <option value="" ${!selectedWatchlistGroup ? "selected" : ""}>全部</option>
+      ${next.settings.watchlistGroups.map((group) => `<option value="${escapeAttr(group.id)}" ${group.id === selectedWatchlistGroup ? "selected" : ""}>${escapeHtml(group.name)}</option>`).join("")}
+    </select></label>`;
+    return `<div class="watchlist-page">${filter}${renderStockSearch()}${codes.length ? renderQuoteList(codes, next) : '<div class="empty-state">当前分组暂无股票，可搜索添加或在设置中调整分组。</div>'}</div>`;
+  }
   if (tab.type === "stock-list") return renderQuoteList(tab.securityCodes, next);
   if (tab.type === "drivers") return renderNews(next, tab.maxItems, tab.newsMode);
   if (tab.type === "combined") return renderCombined(next, tab);
@@ -1387,10 +1404,7 @@ function renderQuoteField(quote: Quote | undefined, field: QuoteField): string {
 }
 
 function watchlistCodes(settings: UserSettings): string[] {
-  return [...settings.watchlist]
-    .filter((item) => item.visible)
-    .sort((a, b) => a.order - b.order)
-    .map((item) => item.securityCode);
+  return visibleWatchlistCodes(settings);
 }
 
 function sortCodes(codes: string[], quotes: Quote[], settings: UserSettings): string[] {
@@ -1540,6 +1554,11 @@ rootElement.addEventListener("change", (event) => {
 
 async function handleRootChange(event: Event): Promise<void> {
   const select = event.target as HTMLSelectElement;
+  if (select.dataset.action === "watchlist-group") {
+    selectedWatchlistGroup = select.value;
+    render(snapshot);
+    return;
+  }
   if (select.dataset.action === "tab-overflow" && select.value) {
     await activateTab(select.value);
   }

@@ -1465,7 +1465,13 @@ function registerIpc(): void {
     });
   });
   handleTrusted("securities:search", (_event, query: unknown) => searchSecurities(query));
-  handleTrusted("watchlist:add", async (_event, value: unknown) => {
+  handleTrusted("watchlist:add", async (_event, value: unknown, requestedGroupId: unknown) => {
+    const groupId = requestedGroupId === undefined ? "all" : requestedGroupId;
+    if (
+      typeof groupId !== "string" ||
+      !config.watchlistGroups.some((group) => group.id === groupId)
+    )
+      throw new Error("自选分组不存在，请重新选择");
     const security = value as { code?: string; name?: string; market?: string } | null;
     if (
       !security ||
@@ -1492,7 +1498,7 @@ function registerIpc(): void {
       securityCode: security.code,
       visible: true,
       order: Math.max(-1, ...next.watchlist.map((item) => item.order)) + 1,
-      groupId: "all"
+      groupId
     });
     return saveSettings(next);
   });

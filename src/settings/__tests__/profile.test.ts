@@ -38,6 +38,7 @@ function current(): UserSettings {
         }
       }
     ],
+    watchlistGroups: [{ id: "all", name: "默认分组" }],
     watchlist: [{ securityCode: "000001", visible: true, order: 0, groupId: "all" }],
     tabs: [
       {

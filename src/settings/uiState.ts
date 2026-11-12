@@ -30,13 +30,19 @@ export interface RenderUiState {
 export const EMPTY_UI_STATE: RenderUiState = { details: [], focus: null, scrollY: 0 };
 
 /** 行级容器属性，用于把同一个 `data-setting` 的不同行区分开。 */
-const ROW_ATTRIBUTES = ["holdingIndex", "tabIndex", "riskGroupIndex", "index"] as const;
+const ROW_ATTRIBUTES = [
+  "holdingIndex",
+  "tabIndex",
+  "riskGroupIndex",
+  "groupIndex",
+  "index"
+] as const;
 /** 可以作为状态锚点的元素。 */
 const KEYABLE_SELECTOR = "[data-setting],[data-action],details";
 
 function rowContext(element: Element): string {
   const row = element.closest<HTMLElement>(
-    "[data-holding-index],[data-tab-index],[data-risk-group-index],[data-index]"
+    "[data-holding-index],[data-tab-index],[data-risk-group-index],[data-group-index],[data-index]"
   );
   if (!row) return "";
   for (const attribute of ROW_ATTRIBUTES) {

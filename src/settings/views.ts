@@ -120,7 +120,8 @@ export function renderWatchItem(
   item: UserSettings["watchlist"][number],
   index: number,
   total: number,
-  alias: string
+  alias: string,
+  groups: UserSettings["watchlistGroups"] = [{ id: "all", name: "默认分组" }]
 ): string {
   return `
     <div class="watch-row" data-index="${index}">
@@ -130,6 +131,7 @@ export function renderWatchItem(
       </label>
       <span class="code-readonly">${item.securityCode}</span>
       <input data-setting="alias" maxlength="16" value="${escapeAttr(alias)}" placeholder="显示别名" aria-label="显示别名" />
+      <select data-setting="watch-group" aria-label="股票所属自选分组">${groups.map((group) => option(group.id, group.name, item.groupId)).join("")}</select>
       <div class="row-actions">
         <button data-action="move-up" title="上移" ${index === 0 ? "disabled" : ""}>↑</button>
         <button data-action="move-down" title="下移" ${index === total - 1 ? "disabled" : ""}>↓</button>
@@ -298,6 +300,7 @@ export function renderProfilePreview(preview: ProfilePreview): string {
       <div class="profile-diff-grid">
         ${rows.map(([label, codes]) => `<span><b>${label}</b>${codes.length ? escapeHtml(codes.join("、")) : "无"}</span>`).join("")}
         <span><b>提醒规则变化</b>${diff.alertRuleChanges}</span>
+        <span><b>自选分组</b>${diff.watchlistGroupsChanged ? "有变化" : "无变化"}</span>
         <span><b>全局风险设置</b>${diff.riskSettingsChanged ? "有变化" : "无变化"}</span>
       </div>
       ${

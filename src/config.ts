@@ -1,3 +1,4 @@
+import { normalizeWatchlistGroups } from "./domain/watchlistGroups.js";
 import {
   DEFAULT_BOSS_KEY_ACCELERATOR,
   LEGACY_DEFAULT_BOSS_KEY_ACCELERATORS,
@@ -7,7 +8,7 @@ import {
 import { isAiApiBaseUrlAllowed } from "./domain/runtimeSecurity.js";
 import type { QuoteRequest } from "./domain/types.js";
 
-export const SETTINGS_SCHEMA_VERSION = 9;
+export const SETTINGS_SCHEMA_VERSION = 10;
 const BOSS_KEY_SCHEMA_VERSION = 5;
 const WINDOW_BOUNDS_SCHEMA_VERSION = 5;
 const MARKET_TAB_SCHEMA_VERSION = 6;
@@ -131,6 +132,11 @@ export interface Holding {
   alertRules: HoldingAlertRules;
 }
 
+export interface WatchlistGroup {
+  id: string;
+  name: string;
+}
+
 export interface WatchlistMembership {
   securityCode: string;
   visible: boolean;
@@ -175,6 +181,7 @@ export interface UserSettings {
   securities: Security[];
   holdings: Holding[];
   watchlist: WatchlistMembership[];
+  watchlistGroups: WatchlistGroup[];
   tabs: TabConfig[];
   navigation: NavigationSettings;
   quotes: {
@@ -330,7 +337,12 @@ export function loadAppConfigFromObject(
     knownCodes,
     new Set(risk.groups.map((group) => group.id))
   );
-  const watchlist = normalizeWatchlist(raw.watchlist, knownCodes, securities);
+  const watchlistGroups = normalizeWatchlistGroups(raw.watchlistGroups);
+  const watchlistGroupIds = new Set(watchlistGroups.map((group) => group.id));
+  const watchlist = normalizeWatchlist(raw.watchlist, knownCodes, securities).map((item) => ({
+    ...item,
+    groupId: watchlistGroupIds.has(item.groupId) ? item.groupId : "all"
+  }));
   const tabs = normalizeTabs(raw.tabs, knownCodes, sourceSchemaVersion);
   const navigation = normalizeNavigation(rawNavigation, tabs, holdings.length > 0);
   const windowBounds = migrateWindowBounds(rawWindow, sourceSchemaVersion);
@@ -342,6 +354,7 @@ export function loadAppConfigFromObject(
     securities,
     holdings,
     watchlist,
+    watchlistGroups,
     tabs,
     navigation,
     quotes: {
@@ -431,6 +444,7 @@ export function toUserSettings(config: AppConfig): UserSettings {
     securities: config.securities.map((item) => ({ ...item })),
     holdings: config.holdings.map((item) => ({ ...item, alertRules: { ...item.alertRules } })),
     watchlist: config.watchlist.map((item) => ({ ...item })),
+    watchlistGroups: config.watchlistGroups.map((item) => ({ ...item })),
     tabs: config.tabs.map((tab) => ({ ...tab, securityCodes: [...tab.securityCodes] })),
     navigation: { ...config.navigation },
     quotes: { fields: [...config.quotes.fields], sort: config.quotes.sort },
@@ -556,6 +570,40 @@ export function assertSavableSettings(value: unknown): void {
     securityCodes.add(code);
   }
 
+  const groups = arrayRecords(raw.watchlistGroups);
+  if (raw.watchlistGroups !== undefined) {
+    if (
+      !Array.isArray(raw.watchlistGroups) ||
+      groups.length !== raw.watchlistGroups.length ||
+      groups.length === 0 ||
+      groups.length > 20
+    )
+      throw new Error("自选分组须为 1–20 个");
+    const ids = new Set<string>();
+    const names = new Set<string>();
+    for (const group of groups) {
+      if (
+        typeof group.id !== "string" ||
+        !/^[a-zA-Z0-9_-]{1,64}$/.test(group.id) ||
+        ids.has(group.id)
+      )
+        throw new Error("自选分组标识无效或重复");
+      if (
+        typeof group.name !== "string" ||
+        !group.name.trim() ||
+        group.name.trim().length > 16 ||
+        names.has(group.name.trim())
+      )
+        throw new Error("自选分组名称不能为空、重复或超过16字");
+      ids.add(group.id);
+      names.add(group.name.trim());
+    }
+    if (!ids.has("all")) throw new Error("必须保留默认自选分组");
+    for (const item of arrayRecords(raw.watchlist)) {
+      if (!ids.has(typeof item.groupId === "string" ? item.groupId : "all"))
+        throw new Error("自选分组不存在");
+    }
+  }
   const watchlist = arrayRecords(raw.watchlist);
   if (watchlist.length === 0) throw new Error("至少保留一只自选股");
   if (watchlist.length > 50) throw new Error("自选股最多50只");

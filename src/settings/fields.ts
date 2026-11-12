@@ -80,6 +80,10 @@ export const HOLDING_ALERT_NUMBER_FIELDS: Record<string, HoldingAlertNumberField
 
 /** 自选行的字段。 */
 export const WATCH_ROW_FIELDS: Record<string, RowUpdater> = {
+  "watch-group": (settings, index, element) => {
+    if (settings.watchlistGroups.some((group) => group.id === element.value))
+      settings.watchlist[index]!.groupId = element.value;
+  },
   visible: (settings, index, element) => {
     settings.watchlist[index]!.visible = element.checked === true;
   },

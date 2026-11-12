@@ -1242,3 +1242,7 @@ h1 {
 .stock-search-results { max-height: 160px; overflow-y: auto; }
 .stock-search-result { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 0; font-size: 12px; }
 .stock-search-result small { opacity: 0.65; }
+
+.watchlist-group-filter { display: flex; align-items: center; gap: 8px; padding: 6px 10px 0; font-size: 12px; flex-shrink: 0; }
+.watchlist-group-filter select { min-width: 0; max-width: 100%; color: inherit; background: rgb(255 255 255 / 0.08); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 5px; padding: 4px 8px; }
+.watchlist-group-filter option { color: #edf2f4; background: rgb(8 13 16 / var(--widget-opacity)); }
