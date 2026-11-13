@@ -1,3 +1,4 @@
+import { membershipGroupIds } from "../domain/watchlistGroups.js";
 import type { HoldingAlertRules, Security, TabConfig, UserSettings } from "../config.js";
 import type { ProfilePreview } from "./profile.js";
 import { escapeAttr, escapeHtml } from "../presentation/format.js";
@@ -131,7 +132,7 @@ export function renderWatchItem(
       </label>
       <span class="code-readonly">${item.securityCode}</span>
       <input data-setting="alias" maxlength="16" value="${escapeAttr(alias)}" placeholder="显示别名" aria-label="显示别名" />
-      <select data-setting="watch-group" aria-label="股票所属自选分组">${groups.map((group) => option(group.id, group.name, item.groupId)).join("")}</select>
+      <div class="watch-multi-groups" aria-label="股票所属自选分组">${groups.map((group) => `<label><input type="checkbox" data-setting="watch-group-toggle" data-group-id="${escapeAttr(group.id)}" ${membershipGroupIds(item).includes(group.id) ? "checked" : ""}>${escapeHtml(group.name)}</label>`).join("")}</div>
       <div class="row-actions">
         <button data-action="move-up" title="上移" ${index === 0 ? "disabled" : ""}>↑</button>
         <button data-action="move-down" title="下移" ${index === total - 1 ? "disabled" : ""}>↓</button>

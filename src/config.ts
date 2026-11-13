@@ -1,4 +1,8 @@
-import { normalizeWatchlistGroups } from "./domain/watchlistGroups.js";
+import {
+  normalizeWatchlistGroups,
+  membershipGroupIds,
+  setMembershipGroups
+} from "./domain/watchlistGroups.js";
 import {
   DEFAULT_BOSS_KEY_ACCELERATOR,
   LEGACY_DEFAULT_BOSS_KEY_ACCELERATORS,
@@ -8,7 +12,7 @@ import {
 import { isAiApiBaseUrlAllowed } from "./domain/runtimeSecurity.js";
 import type { QuoteRequest } from "./domain/types.js";
 
-export const SETTINGS_SCHEMA_VERSION = 10;
+export const SETTINGS_SCHEMA_VERSION = 11;
 const BOSS_KEY_SCHEMA_VERSION = 5;
 const WINDOW_BOUNDS_SCHEMA_VERSION = 5;
 const MARKET_TAB_SCHEMA_VERSION = 6;
@@ -142,6 +146,7 @@ export interface WatchlistMembership {
   visible: boolean;
   order: number;
   groupId: string;
+  groupIds?: string[];
 }
 
 export interface TabConfig {
@@ -339,10 +344,11 @@ export function loadAppConfigFromObject(
   );
   const watchlistGroups = normalizeWatchlistGroups(raw.watchlistGroups);
   const watchlistGroupIds = new Set(watchlistGroups.map((group) => group.id));
-  const watchlist = normalizeWatchlist(raw.watchlist, knownCodes, securities).map((item) => ({
-    ...item,
-    groupId: watchlistGroupIds.has(item.groupId) ? item.groupId : "all"
-  }));
+  const watchlist = normalizeWatchlist(raw.watchlist, knownCodes, securities).map((item) => {
+    const ids = membershipGroupIds(item).filter((id) => watchlistGroupIds.has(id));
+    setMembershipGroups(item, ids.length ? ids : ["all"]);
+    return item;
+  });
   const tabs = normalizeTabs(raw.tabs, knownCodes, sourceSchemaVersion);
   const navigation = normalizeNavigation(rawNavigation, tabs, holdings.length > 0);
   const windowBounds = migrateWindowBounds(rawWindow, sourceSchemaVersion);
@@ -443,7 +449,10 @@ export function toUserSettings(config: AppConfig): UserSettings {
     personalSeedVersion: config.personalSeedVersion,
     securities: config.securities.map((item) => ({ ...item })),
     holdings: config.holdings.map((item) => ({ ...item, alertRules: { ...item.alertRules } })),
-    watchlist: config.watchlist.map((item) => ({ ...item })),
+    watchlist: config.watchlist.map((item) => ({
+      ...item,
+      groupIds: [...membershipGroupIds(item)]
+    })),
     watchlistGroups: config.watchlistGroups.map((item) => ({ ...item })),
     tabs: config.tabs.map((tab) => ({ ...tab, securityCodes: [...tab.securityCodes] })),
     navigation: { ...config.navigation },
@@ -600,12 +609,18 @@ export function assertSavableSettings(value: unknown): void {
     }
     if (!ids.has("all")) throw new Error("必须保留默认自选分组");
     for (const item of arrayRecords(raw.watchlist)) {
-      if (!ids.has(typeof item.groupId === "string" ? item.groupId : "all"))
+      const memberships = item.groupIds === undefined ? [item.groupId ?? "all"] : item.groupIds;
+      if (
+        !Array.isArray(memberships) ||
+        !memberships.length ||
+        memberships.length > 20 ||
+        memberships.some((id: unknown) => typeof id !== "string" || !ids.has(id))
+      )
         throw new Error("自选分组不存在");
     }
   }
   const watchlist = arrayRecords(raw.watchlist);
-  if (watchlist.length === 0) throw new Error("至少保留一只自选股");
+
   if (watchlist.length > 50) throw new Error("自选股最多50只");
   const watchCodes = new Set<string>();
   for (const item of watchlist) {
@@ -908,7 +923,8 @@ function normalizeWatchlist(
         name: security.name,
         visible: true,
         order,
-        groupId: "all"
+        groupId: "all",
+        groupIds: ["all"]
       }))
     : rows;
 
@@ -921,7 +937,8 @@ function normalizeWatchlist(
       securityCode: row.code,
       visible: row.visible,
       order: row.order,
-      groupId: row.groupId
+      groupId: row.groupId,
+      groupIds: row.groupIds
     });
   }
   return result.sort((a, b) => a.order - b.order).map((item, order) => ({ ...item, order }));
@@ -934,6 +951,7 @@ function legacyWatchlistRows(value: unknown): Array<{
   visible: boolean;
   order: number;
   groupId: string;
+  groupIds?: string[];
 }> {
   if (!Array.isArray(value)) return [];
   const result: Array<{
@@ -943,6 +961,7 @@ function legacyWatchlistRows(value: unknown): Array<{
     visible: boolean;
     order: number;
     groupId: string;
+    groupIds?: string[];
   }> = [];
   const seen = new Set<string>();
 
@@ -957,7 +976,10 @@ function legacyWatchlistRows(value: unknown): Array<{
       name: asText(item.name, 24),
       visible: item.visible !== false,
       order: Number.isInteger(item.order) ? Number(item.order) : index,
-      groupId: asIdentifier(item.groupId, "all")
+      groupId: asIdentifier(item.groupId, "all"),
+      groupIds: Array.isArray(item.groupIds)
+        ? item.groupIds.filter((id): id is string => typeof id === "string")
+        : undefined
     });
   });
   return result;

@@ -4,6 +4,8 @@ import {
   type HoldingEditDraft
 } from "./presentation/holdingEditor.js";
 import {
+  membershipGroupIds,
+  type WatchlistAction,
   visibleWatchlistCodes,
   watchlistViewGroups,
   HOLDINGS_WATCHLIST_GROUP_ID
@@ -82,6 +84,82 @@ async function saveHoldingEdit(): Promise<void> {
   }
 }
 
+interface StockMenuState {
+  code: string;
+  groupId: string;
+  x: number;
+  y: number;
+  editing: boolean;
+  ids: string[];
+  busy: boolean;
+  message: string;
+}
+let stockMenu: StockMenuState | null = null;
+
+function closeStockMenu(): void {
+  if (stockMenu?.busy) return;
+  stockMenu = null;
+  document.getElementById("stock-context-menu")?.remove();
+}
+
+function renderStockMenu(): void {
+  document.getElementById("stock-context-menu")?.remove();
+  const menu = stockMenu;
+  if (!menu) return;
+  const element = document.createElement("section");
+  element.id = "stock-context-menu";
+  element.className = "stock-context-menu";
+  element.setAttribute("aria-label", "自选股票操作");
+  const security = snapshot.settings.securities.find((item) => item.code === menu.code);
+  const item = snapshot.settings.watchlist.find((row) => row.securityCode === menu.code);
+  const disabled = menu.busy ? "disabled" : "";
+  const canRemoveCurrent =
+    !!item &&
+    snapshot.settings.watchlistGroups.some((group) => group.id === menu.groupId) &&
+    membershipGroupIds(item).includes(menu.groupId);
+  element.innerHTML = `<strong>${escapeHtml(security?.alias || security?.name || menu.code)} · ${menu.code}</strong>${
+    menu.editing
+      ? `
+    <p>可同时选择多个分组</p>
+    <div class="stock-group-options">${snapshot.settings.watchlistGroups.map((group) => `<label><input type="checkbox" data-stock-group="${escapeAttr(group.id)}" ${menu.ids.includes(group.id) ? "checked" : ""} ${disabled}>${escapeHtml(group.name)}</label>`).join("")}</div>
+    <div class="stock-menu-actions"><button data-action="save-stock-groups" ${disabled}>${menu.busy ? "保存中…" : "保存"}</button><button data-action="close-stock-menu" ${disabled}>取消</button></div>`
+      : `
+    <button data-action="edit-stock-groups">调整分组</button>
+    <button data-action="remove-stock-current" ${canRemoveCurrent ? "" : "disabled"} title="${canRemoveCurrent ? "只移除当前分组归属" : "请在普通分组中操作；持仓由持仓记录同步"}">从当前分组移除</button>
+    <button data-action="remove-stock-all" ${item ? "" : "disabled"}>从全部自选删除</button>
+    ${snapshot.settings.holdings.some((holding) => holding.securityCode === menu.code) ? "<p>持仓分组自动同步，以上操作不修改持仓。</p>" : ""}`
+  }
+    <div role="status">${escapeHtml(menu.message)}</div>`;
+  rootElement.append(element);
+  const rect = element.getBoundingClientRect();
+  element.style.left = `${Math.max(6, Math.min(menu.x, window.innerWidth - rect.width - 6))}px`;
+  element.style.top = `${Math.max(6, Math.min(menu.y, window.innerHeight - rect.height - 6))}px`;
+}
+
+async function manageStock(action: WatchlistAction["action"]): Promise<void> {
+  const menu = stockMenu;
+  if (!menu || menu.busy || !window.floatingStock) return;
+  menu.busy = true;
+  menu.message = "";
+  renderStockMenu();
+  try {
+    const settings = await window.floatingStock.manageWatchlist({
+      code: menu.code,
+      action,
+      groupId: menu.groupId,
+      groupIds: menu.ids
+    });
+    stockMenu = null;
+    snapshot = { ...snapshot, settings };
+    stockMessage = action === "groups" ? "分组已更新" : "已移除自选归属；持仓记录不受影响";
+    render(snapshot);
+  } catch (error) {
+    menu.busy = false;
+    menu.message = error instanceof Error ? error.message : "操作失败，请重试";
+    renderStockMenu();
+  }
+}
+
 let selectedWatchlistGroup = "";
 let stockQuery = "";
 let stockResults: Security[] = [];
@@ -90,13 +168,21 @@ let stockBusy = false;
 let stockSearchVersion = 0;
 
 function renderStockSearch(): string {
-  const added = new Set(snapshot.settings.watchlist.map((item) => item.securityCode));
+  const targetGroup =
+    selectedWatchlistGroup === HOLDINGS_WATCHLIST_GROUP_ID
+      ? "all"
+      : selectedWatchlistGroup || "all";
+  const added = new Set(
+    snapshot.settings.watchlist
+      .filter((item) => item.visible && membershipGroupIds(item).includes(targetGroup))
+      .map((item) => item.securityCode)
+  );
   const addingToDefault = selectedWatchlistGroup === HOLDINGS_WATCHLIST_GROUP_ID;
   return `<section class="stock-search" aria-label="添加自选股票">
     ${
       stockMessage || stockResults.length || stockBusy
         ? `<div class="stock-search-panel">
-      <div class="stock-search-heading"><span>搜索结果</span><button type="button" data-action="close-stock-search" aria-label="关闭搜索结果" title="关闭搜索结果" ${stockBusy ? "disabled" : ""}>×</button></div>
+      <div class="stock-search-heading"><span>${stockResults.length || stockBusy ? "搜索结果" : "操作提示"}</span><button type="button" data-action="close-stock-search" aria-label="关闭提示" title="关闭提示" ${stockBusy ? "disabled" : ""}>×</button></div>
       <div role="status" class="stock-search-message">${escapeHtml(stockMessage)}</div>
       <div class="stock-search-results">${stockResults
         .map(
@@ -168,7 +254,7 @@ async function addWatchStock(index: number): Promise<void> {
 }
 
 const defaultSettings: UserSettings = {
-  schemaVersion: 10,
+  schemaVersion: 11,
   personalSeedVersion: 0,
   securities: [
     { code: "000001", market: "SZ", name: "", alias: "" },
@@ -485,6 +571,7 @@ function render(next: AppSnapshot): void {
     input?.focus();
     input?.setSelectionRange(inputSelection.start, inputSelection.end);
   }
+  renderStockMenu();
   restoreChartHover();
   lastRenderedPageKey = pageKey;
 }
@@ -1460,7 +1547,7 @@ function renderQuote(code: string, quote: Quote | undefined, settings: UserSetti
   const direction = quoteDirection(quote);
 
   return `
-    <article class="quote-row ${direction}" ${marketDetailAttributes("stock", security?.market ?? quote?.market, code)}>
+    <article class="quote-row ${direction}" data-stock-code="${escapeAttr(code)}" tabindex="0" ${marketDetailAttributes("stock", security?.market ?? quote?.market, code)}>
       <div class="quote-name">
         <strong>${escapeHtml(displayName)}</strong>
         <span>${escapeHtml(detailName)}${security?.market ?? quote?.market ?? ""}.${code}${renderQuoteQuality(quote)}</span>
@@ -1522,6 +1609,42 @@ function applyAppearance(settings: UserSettings): void {
 rootElement.addEventListener("click", (event) => {
   void handleRootClick(event);
 });
+function openStockMenu(row: HTMLElement, x: number, y: number): void {
+  if (stockMenu?.busy || !row.dataset.stockCode) return;
+  const code = row.dataset.stockCode;
+  const item = snapshot.settings.watchlist.find((entry) => entry.securityCode === code);
+  stockMenu = {
+    code,
+    groupId: selectedWatchlistGroup,
+    x,
+    y,
+    editing: false,
+    ids: item ? [...membershipGroupIds(item)] : [],
+    busy: false,
+    message: ""
+  };
+  renderStockMenu();
+  document.querySelector<HTMLButtonElement>("#stock-context-menu button")?.focus();
+}
+rootElement.addEventListener("contextmenu", (event) => {
+  const row = (event.target as HTMLElement).closest<HTMLElement>(
+    ".watchlist-page [data-stock-code]"
+  );
+  if (!row) return;
+  event.preventDefault();
+  openStockMenu(row, event.clientX, event.clientY);
+});
+document.addEventListener("pointerdown", (event) => {
+  if (!(event.target as HTMLElement).closest("#stock-context-menu")) closeStockMenu();
+});
+window.addEventListener("blur", closeStockMenu);
+rootElement.addEventListener("change", (event) => {
+  const input = event.target as HTMLInputElement;
+  if (!stockMenu || stockMenu.busy || input.dataset.stockGroup === undefined) return;
+  stockMenu.ids = input.checked
+    ? [...new Set([...stockMenu.ids, input.dataset.stockGroup])]
+    : stockMenu.ids.filter((id) => id !== input.dataset.stockGroup);
+});
 rootElement.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement;
   if (input.id === "stock-query") stockQuery = input.value;
@@ -1537,6 +1660,22 @@ rootElement.addEventListener("compositionend", (event) => {
   }
 });
 rootElement.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && stockMenu) {
+    event.preventDefault();
+    closeStockMenu();
+    return;
+  }
+  if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+    const row = (event.target as HTMLElement).closest<HTMLElement>(
+      ".watchlist-page [data-stock-code]"
+    );
+    if (row) {
+      event.preventDefault();
+      const rect = row.getBoundingClientRect();
+      openStockMenu(row, rect.left + 12, rect.top + 12);
+      return;
+    }
+  }
   if (event.key === "Escape" && holdingDraft && !holdingEditBusy && !event.isComposing) {
     holdingDraft = null;
     holdingEditMessage = "";
@@ -1561,6 +1700,23 @@ async function handleRootClick(event: MouseEvent): Promise<void> {
   const control = (event.target as HTMLElement).closest<HTMLElement>("[data-action], [data-url]");
   if (!control) return;
 
+  if (control.closest("#stock-context-menu")) {
+    if (stockMenu?.busy) return;
+    if (control.dataset.action === "close-stock-menu") closeStockMenu();
+    if (control.dataset.action === "edit-stock-groups" && stockMenu) {
+      stockMenu.editing = true;
+      renderStockMenu();
+    }
+    if (control.dataset.action === "save-stock-groups") await manageStock("groups");
+    if (
+      control.dataset.action === "remove-stock-current" &&
+      !(control as HTMLButtonElement).disabled
+    )
+      await manageStock("remove-current");
+    if (control.dataset.action === "remove-stock-all" && !(control as HTMLButtonElement).disabled)
+      await manageStock("remove-all");
+    return;
+  }
   if (control.dataset.action === "edit-holding") {
     if (holdingEditBusy || holdingDraft) return;
     const holding = snapshot.settings.holdings.find(

@@ -7,6 +7,9 @@ import { assertSavableSettings, loadAppConfigFromObject, toUserSettings } from "
 import { exportProfile, previewProfileImport } from "../settings/profile.js";
 import { SettingsStore } from "../settings/store.js";
 import {
+  applyWatchlistAction,
+  membershipGroupIds,
+  setMembershipGroups,
   HOLDINGS_WATCHLIST_GROUP_ID,
   watchlistViewGroups,
   normalizeWatchlistGroups,
@@ -28,13 +31,13 @@ it("migrates existing stocks and unknown group references to the default group",
     config.watchlist.map((item) => item.groupId),
     ["all", "all"]
   );
-  assert.equal(config.schemaVersion, 10);
+  assert.equal(config.schemaVersion, 11);
 });
 
 it("filters groups without losing manual order or exposing hidden stocks", () => {
   const value = settings();
   value.watchlistGroups.push({ id: "tech", name: "科技" });
-  value.watchlist[0]!.groupId = "tech";
+  setMembershipGroups(value.watchlist[0]!, ["tech"]);
   assert.deepEqual(visibleWatchlistCodes(value, "tech"), ["000001"]);
   assert.deepEqual(visibleWatchlistCodes(value, "all"), ["600519"]);
   assert.deepEqual(visibleWatchlistCodes(value), ["000001", "600519"]);
@@ -45,7 +48,7 @@ it("filters groups without losing manual order or exposing hidden stocks", () =>
 it("deletes a group by moving its stocks back and protects the default group", () => {
   const value = settings();
   value.watchlistGroups.push({ id: "tech", name: "科技" });
-  value.watchlist[0]!.groupId = "tech";
+  setMembershipGroups(value.watchlist[0]!, ["tech"]);
   removeWatchlistGroup(value, "tech");
   removeWatchlistGroup(value, "all");
   assert.equal(value.watchlist.length, 2);
@@ -60,7 +63,7 @@ it("rejects duplicate names, missing defaults and dangling group references when
   value.watchlistGroups = [{ id: "tech", name: "科技" }];
   assert.throws(() => assertSavableSettings(value), /默认/);
   value.watchlistGroups = [{ id: "all", name: "默认分组" }];
-  value.watchlist[0]!.groupId = "missing";
+  setMembershipGroups(value.watchlist[0]!, ["missing"]);
   assert.throws(() => assertSavableSettings(value), /分组不存在/);
 });
 
@@ -79,7 +82,7 @@ it("normalizes invalid and excessive group entries", () => {
 it("exports and imports groups independently from risk groups", () => {
   const value = settings();
   value.watchlistGroups.push({ id: "tech", name: "科技" });
-  value.watchlist[0]!.groupId = "tech";
+  setMembershipGroups(value.watchlist[0]!, ["tech"]);
   const preview = previewProfileImport(settings(), exportProfile(value), "replace");
   assert.equal(preview.valid, true, JSON.stringify(preview.issues));
   assert.deepEqual(preview.nextSettings?.watchlistGroups, value.watchlistGroups);
@@ -118,11 +121,11 @@ it("persists the migration and group membership across reloads", async () => {
     assert.deepEqual(persisted.watchlistGroups, migrated.watchlistGroups);
     const value = toUserSettings(migrated);
     value.watchlistGroups.push({ id: "tech", name: "科技" });
-    value.watchlist[0]!.groupId = "tech";
+    setMembershipGroups(value.watchlist[0]!, ["all", "tech"]);
     await store.save(value);
     const loaded = await new SettingsStore(file, {}, {}).load();
     assert.deepEqual(loaded.watchlistGroups, value.watchlistGroups);
-    assert.equal(loaded.watchlist[0]!.groupId, "tech");
+    assert.deepEqual(membershipGroupIds(loaded.watchlist[0]!), ["all", "tech"]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -172,4 +175,68 @@ it("offers a virtual holdings view even with no holdings and never persists its 
   assert.deepEqual(normalizeWatchlistGroups([{ id: HOLDINGS_WATCHLIST_GROUP_ID, name: "持仓" }]), [
     { id: "all", name: "默认分组" }
   ]);
+});
+
+it("supports several memberships, removes only current and can delete the final watch stock", () => {
+  const value = settings();
+  value.watchlistGroups.push({ id: "tech", name: "科技" });
+  const next = applyWatchlistAction(value, {
+    code: "000001",
+    action: "groups",
+    groupIds: ["all", "tech"]
+  });
+  assert.deepEqual(membershipGroupIds(next.watchlist[0]!), ["all", "tech"]);
+  assert.deepEqual(visibleWatchlistCodes(next, "tech"), ["000001"]);
+  assert.deepEqual(visibleWatchlistCodes(next), ["000001", "600519"]);
+  const removed = applyWatchlistAction(next, {
+    code: "000001",
+    action: "remove-current",
+    groupId: "all"
+  });
+  assert.deepEqual(membershipGroupIds(removed.watchlist[0]!), ["tech"]);
+  assert.deepEqual(visibleWatchlistCodes(removed, "all"), ["600519"]);
+  let empty = applyWatchlistAction(removed, { code: "000001", action: "remove-all" });
+  empty = applyWatchlistAction(empty, { code: "600519", action: "remove-current", groupId: "all" });
+  assert.equal(empty.watchlist.length, 0);
+  assertSavableSettings(empty);
+  assert.equal(toUserSettings(loadAppConfigFromObject({ ...empty }, {})).watchlist.length, 0);
+  assert.equal(value.watchlist.length, 2);
+});
+
+it("preserves remaining memberships when a group is deleted and roundtrips multiple memberships", () => {
+  const value = settings();
+  value.watchlistGroups.push({ id: "tech", name: "科技" });
+  setMembershipGroups(value.watchlist[0]!, ["all", "tech"]);
+  const preview = previewProfileImport(settings(), exportProfile(value), "replace");
+  assert.equal(preview.valid, true, JSON.stringify(preview.issues));
+  assert.deepEqual(membershipGroupIds(preview.nextSettings!.watchlist[0]!), ["all", "tech"]);
+  removeWatchlistGroup(value, "tech");
+  assert.deepEqual(membershipGroupIds(value.watchlist[0]!), ["all"]);
+});
+
+it("rejects invalid group operations and never edits holdings when removing from all", () => {
+  const value = settings();
+  for (const request of [
+    null,
+    { code: "000001", action: "groups", groupIds: [] },
+    { code: "000001", action: "groups", groupIds: ["missing"] },
+    { code: "000001", action: "remove-current", groupId: HOLDINGS_WATCHLIST_GROUP_ID },
+    { code: "000001", action: "remove-current", groupId: "" }
+  ]) {
+    assert.throws(() => applyWatchlistAction(value, request));
+  }
+  const holding = loadAppConfigFromObject(
+    { holdings: [{ securityCode: "000001", quantity: 100, costPrice: 10 }] },
+    {}
+  ).holdings[0]!;
+  value.holdings = [holding];
+  const next = applyWatchlistAction(value, { code: "000001", action: "remove-all" });
+  assert.deepEqual(next.holdings, value.holdings);
+  assert.deepEqual(visibleWatchlistCodes(next, HOLDINGS_WATCHLIST_GROUP_ID), ["000001"]);
+  const restored = applyWatchlistAction(next, {
+    code: "000001",
+    action: "groups",
+    groupIds: ["all"]
+  });
+  assert.ok(restored.watchlist.some((item) => item.securityCode === "000001"));
 });

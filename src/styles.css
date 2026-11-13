@@ -1277,3 +1277,14 @@ h1 {
 .holding-edit-actions { display: flex; gap: 8px; }
 .holding-edit-message { font-size: 11px; overflow-wrap: anywhere; }
 .holding-edit-message:empty { display: none; }
+
+.stock-context-menu { position: fixed; z-index: 5; box-sizing: border-box; width: min(238px, calc(100vw - 12px)); max-height: calc(100vh - 12px); overflow-y: auto; padding: 8px; display: grid; gap: 4px; border: 1px solid rgb(255 255 255 / 0.12); border-radius: 8px; background: rgb(8 13 16 / var(--widget-opacity)); color: #edf2f4; box-shadow: 0 14px 42px rgb(0 0 0 / 0.28); }
+.stock-context-menu > strong { padding: 6px; font-size: 12px; }
+.stock-context-menu button { padding: 8px; border: 0; border-radius: 5px; background: transparent; color: inherit; text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
+.stock-context-menu button:hover:not(:disabled) { background: rgb(255 255 255 / 0.08); }
+.stock-context-menu button:disabled { opacity: 0.4; cursor: default; }
+.stock-context-menu p, .stock-context-menu [role="status"] { margin: 3px 6px; font-size: 11px; line-height: 1.5; opacity: 0.7; }
+.stock-group-options { display: grid; gap: 8px; max-height: 220px; overflow-y: auto; padding: 6px; }
+.stock-group-options label { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.stock-menu-actions { display: flex; gap: 8px; }
+.stock-context-menu button:focus-visible { outline: 1px solid currentColor; }

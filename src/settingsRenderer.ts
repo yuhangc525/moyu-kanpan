@@ -1,8 +1,13 @@
-import { removeWatchlistGroup } from "./domain/watchlistGroups.js";
+import {
+  removeWatchlistGroup,
+  membershipGroupIds,
+  setMembershipGroups
+} from "./domain/watchlistGroups.js";
 import { DEFAULT_BOSS_KEY_ACCELERATOR, parseBossKeyAccelerator } from "./shortcut.js";
 import type { HoldingAlertRules, QuoteField, TabType, UserSettings } from "./config";
 import { escapeAttr, escapeHtml } from "./presentation/format.js";
 import { AiSettingsController } from "./settings/controllers/ai.js";
+import { ThsSettingsController } from "./settings/controllers/ths.js";
 import {
   bossKeyCaptureOutcome,
   displayBossKey,
@@ -67,6 +72,14 @@ let uiMessage: { text: string; kind: "ok" | "error" } | null = null;
 let recordingBossKey = false;
 let activeSettingsPage: SettingsPage = "general";
 let settingsDirty = false;
+const ths = new ThsSettingsController({
+  ipc: () => window.floatingStock,
+  render,
+  apply: (next) => {
+    settings = next;
+    settingsDirty = true;
+  }
+});
 
 // 三个面板的状态与异步流程搬到 `settings/controllers/`：那里不读 DOM、不读模块级变量，
 // 只通过端口回调回来，因此可以单测（此前这些逻辑在这个文件里完全没有测试）。
@@ -226,6 +239,7 @@ function render(): void {
         ${renderAddHolding(settings.securities, settings.holdings)}
       </section>
 
+      <section class="panel ths-panel ${settingsPageClass("portfolio", activeSettingsPage)}">${ths.render()}</section>
       <section class="panel risk-panel ${settingsPageClass("portfolio", activeSettingsPage)}">
         <div class="panel-heading">
           <div>
@@ -271,7 +285,7 @@ function render(): void {
       </section>
 
       <section class="panel ${settingsPageClass("quotes", activeSettingsPage)}">
-        <div class="panel-heading"><div><h2>自选分组</h2><p>每只自选归属一个分组；删除分组后，其中股票移回默认分组。修改后点击保存。</p></div><span>${settings.watchlistGroups.length}/20</span></div>
+        <div class="panel-heading"><div><h2>自选分组</h2><p>每只自选可同时归属多个分组；删除分组时保留其他归属，无其他归属则移回默认分组。修改后点击保存。</p></div><span>${settings.watchlistGroups.length}/20</span></div>
         <div class="watchlist">
           ${settings.watchlistGroups
             .map(
@@ -481,6 +495,10 @@ function applyRowField<T extends object>(
  * 此前这里是一个 190 行、40 多个 `if (setting === "…")` 的分支函数。
  */
 function handleFormChange(event: Event): void {
+  if ((event.target as HTMLElement).id === "ths-portfolio") {
+    ths.select((event.target as HTMLSelectElement).value);
+    return;
+  }
   if (!settings) return;
   const target = event.target as HTMLInputElement | HTMLSelectElement;
   const setting = target.dataset.setting;
@@ -513,6 +531,24 @@ function handleFormChange(event: Event): void {
 
   settingsDirty = true;
 
+  if (setting === "watch-group-toggle") {
+    const index = Number(target.closest<HTMLElement>(".watch-row")?.dataset.index);
+    const item = settings.watchlist[index];
+    const id = target.dataset.groupId;
+    if (item && id) {
+      const ids = membershipGroupIds(item);
+      const next = (target as HTMLInputElement).checked
+        ? [...new Set([...ids, id])]
+        : ids.filter((entry) => entry !== id);
+      if (!next.length) {
+        (target as HTMLInputElement).checked = true;
+        showMessage("请至少保留一个分组", "error");
+        return;
+      }
+      setMembershipGroups(item, next);
+    }
+    return;
+  }
   if (setting === "watch-group-name") {
     const index = Number(target.closest<HTMLElement>(".watch-group-row")?.dataset.groupIndex);
     const group = settings.watchlistGroups[index];
@@ -582,6 +618,7 @@ async function handleClick(event: Event): Promise<void> {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button");
   if (!button || button.disabled) return;
   const action = button.dataset.action;
+  if (await ths.handle(action, settings)) return;
 
   if (action === "settings-page") {
     const page = button.dataset.page;
@@ -689,10 +726,6 @@ async function handleClick(event: Event): Promise<void> {
     return;
   }
   if (action === "delete-stock") {
-    if (settings.watchlist.length === 1) {
-      showMessage("至少保留一只自选股", "error");
-      return;
-    }
     const removed = settings.watchlist.splice(index, 1)[0];
     if (removed) {
       for (const tab of settings.tabs) {
@@ -1091,6 +1124,7 @@ if (!window.floatingStock) {
       render();
     })
     .catch((error) => showMessage(error instanceof Error ? error.message : String(error), "error"));
+  void ths.initialize();
   window.floatingStock.onSettings((value) => {
     if (settingsDirty) return;
     settings = value;

@@ -1,3 +1,5 @@
+import { ThsIntegration } from "./ths.js";
+import { applyWatchlistAction, membershipGroupIds } from "../src/domain/watchlistGroups.js";
 import { applyHoldingEdit } from "../src/domain/holdingEdit.js";
 import { searchSecurities } from "../src/services/securitySearch.js";
 import {
@@ -149,6 +151,7 @@ let trayVisualState: TrayVisualState | null = null;
 let trayPresentationFingerprint = "";
 let newsAnalyzer: CachedNewsAnalyzer;
 let aiCredentialStore: EncryptedApiKeyStore;
+let thsIntegration: ThsIntegration;
 let aiCredentialSource: AiRuntimeStatus["credentialSource"] = "none";
 let aiStatus: AiRuntimeStatus = {
   enabled: false,
@@ -1447,6 +1450,7 @@ function pushSettings(): void {
 }
 
 function registerIpc(): void {
+  handleTrusted("ths:request", (_event, value: unknown) => thsIntegration.request(value));
   handleTrusted("app:online", () => refreshAfterConnectivityChange());
   handleTrusted("snapshot:get", () => snapshot());
   handleTrusted("settings:get", () => settingsForRenderer(config));
@@ -1483,8 +1487,15 @@ function registerIpc(): void {
       !["SH", "SZ", "BJ"].includes(security.market ?? "")
     )
       throw new Error("股票信息无效");
-    if (config.watchlist.some((item) => item.securityCode === security.code))
-      return settingsForRenderer(config);
+    const existing = config.watchlist.find((item) => item.securityCode === security.code);
+    if (existing)
+      return saveSettings(
+        applyWatchlistAction(settingsForRenderer(config), {
+          code: security.code,
+          action: "groups",
+          groupIds: [...new Set([...membershipGroupIds(existing), groupId])]
+        })
+      );
     if (config.watchlist.length >= 50) throw new Error("自选股最多 50 只");
     const next = settingsForRenderer(config);
     if (!next.securities.some((item) => item.code === security.code)) {
@@ -1503,6 +1514,9 @@ function registerIpc(): void {
     });
     return saveSettings(next);
   });
+  handleTrusted("watchlist:manage", (_event, request: unknown) =>
+    saveSettings(applyWatchlistAction(settingsForRenderer(config), request))
+  );
   handleTrusted("holdings:update", (_event, value: unknown) => {
     return saveSettings(applyHoldingEdit(settingsForRenderer(config), value));
   });
@@ -1883,6 +1897,8 @@ if (hasSingleInstanceLock)
         "secure-storage:系统安全存储回落到 basic_text（等价明文），建议改用环境变量提供 API Key"
       );
     }
+    thsIntegration = new ThsIntegration(path.join(app.getPath("userData"), "ths-credential.json"));
+    await thsIntegration.load();
     aiCredentialStore = new EncryptedApiKeyStore(
       path.join(app.getPath("userData"), "ai-credential.json"),
       {
@@ -1993,6 +2009,7 @@ app.on("before-quit", (event) => {
   event.preventDefault();
   if (shutdownInProgress) return;
   shutdownInProgress = true;
+  thsIntegration?.cancelLogin();
   isQuitting = true;
   if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
   if (quotePollTimer) clearTimeout(quotePollTimer);

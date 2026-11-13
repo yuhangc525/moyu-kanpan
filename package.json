@@ -58,6 +58,7 @@
       "config/**",
       "!config/personal.local.json",
       "resources/icons/**",
+      "resources/licenses/**",
       "!resources/icons/app.png",
       "LICENSE",
       "README.md",

@@ -1,3 +1,4 @@
+import { setMembershipGroups } from "../domain/watchlistGroups.js";
 import type {
   HoldingAlertRules,
   NewsMode,
@@ -82,7 +83,7 @@ export const HOLDING_ALERT_NUMBER_FIELDS: Record<string, HoldingAlertNumberField
 export const WATCH_ROW_FIELDS: Record<string, RowUpdater> = {
   "watch-group": (settings, index, element) => {
     if (settings.watchlistGroups.some((group) => group.id === element.value))
-      settings.watchlist[index]!.groupId = element.value;
+      setMembershipGroups(settings.watchlist[index]!, [element.value]);
   },
   visible: (settings, index, element) => {
     settings.watchlist[index]!.visible = element.checked === true;

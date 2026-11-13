@@ -10,6 +10,10 @@ import type { FloatingStockApi } from "../src/global.js";
 import type { ProfileImportMode, ProfilePreview } from "../src/settings/profile.js";
 
 const api: FloatingStockApi = {
+  thsRequest: (request) =>
+    ipcRenderer.invoke("ths:request", request) as ReturnType<FloatingStockApi["thsRequest"]>,
+  manageWatchlist: (request) =>
+    ipcRenderer.invoke("watchlist:manage", request) as Promise<UserSettings>,
   updateHolding: (request) =>
     ipcRenderer.invoke("holdings:update", request) as Promise<UserSettings>,
   searchSecurities: (query) =>

@@ -1,3 +1,5 @@
+import type { WatchlistAction } from "./domain/watchlistGroups.js";
+import type { ThsRequest, ThsStatus, ThsPreview } from "./services/ths/ledger.js";
 import type { HoldingEditRequest } from "./domain/holdingEdit.js";
 import type { AiSettings, Security, UserSettings } from "./config.js";
 import type {
@@ -15,6 +17,8 @@ export interface ProfileApplyResult {
 }
 
 export interface FloatingStockApi {
+  thsRequest: (request: ThsRequest) => Promise<ThsStatus | ThsPreview | UserSettings>;
+  manageWatchlist: (request: WatchlistAction) => Promise<UserSettings>;
   updateHolding: (request: HoldingEditRequest) => Promise<UserSettings>;
   searchSecurities: (query: string) => Promise<Security[]>;
   addWatchStock: (security: Security, groupId?: string) => Promise<UserSettings>;

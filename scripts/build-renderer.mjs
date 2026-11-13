@@ -22,6 +22,7 @@ await compileTypeScript("src/settings/views.ts", "settings/views.js");
 await compileTypeScript("src/settings/uiState.ts", "settings/uiState.js");
 await compileTypeScript("src/settings/controllers/ports.ts", "settings/controllers/ports.js");
 await compileTypeScript("src/settings/controllers/ai.ts", "settings/controllers/ai.js");
+await compileTypeScript("src/settings/controllers/ths.ts", "settings/controllers/ths.js");
 await compileTypeScript("src/settings/controllers/bossKey.ts", "settings/controllers/bossKey.js");
 await compileTypeScript("src/settings/controllers/profile.ts", "settings/controllers/profile.js");
 await compileTypeScript("src/presentation/excelWorkbook.ts", "presentation/excelWorkbook.js");

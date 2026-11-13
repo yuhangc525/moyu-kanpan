@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 10,
+  "schemaVersion": 11,
   "securities": [
     { "code": "000001", "market": "SZ", "name": "", "alias": "" },
     { "code": "600519", "market": "SH", "name": "", "alias": "" },

@@ -1,3 +1,4 @@
+import { membershipGroupIds, setMembershipGroups } from "../domain/watchlistGroups.js";
 import type {
   Holding,
   HoldingAlertRules,
@@ -528,7 +529,7 @@ function validateWatchlist(
     if (!isRecord(record)) return issues.push(error(path, "必须是代码字符串或对象"));
     rejectUnknown(
       record,
-      new Set(["code", "securityCode", "visible", "order", "groupId"]),
+      new Set(["code", "securityCode", "visible", "order", "groupId", "groupIds"]),
       path,
       issues
     );
@@ -540,7 +541,13 @@ function validateWatchlist(
     seen.add(code);
     const groupId =
       typeof record.groupId === "string" && record.groupId.trim() ? record.groupId.trim() : "all";
-    if (!groupIds.has(groupId)) issues.push(error(`${path}.groupId`, "自选分组不存在"));
+    const ids: unknown = record.groupIds ?? [groupId];
+    const validIds =
+      Array.isArray(ids) &&
+      ids.length > 0 &&
+      ids.length <= 20 &&
+      ids.every((id: unknown) => typeof id === "string" && groupIds.has(id));
+    if (!validIds) issues.push(error(`${path}.groupIds`, "自选分组不存在或为空"));
     const requestedOrder =
       record.order === undefined
         ? result.length
@@ -549,7 +556,8 @@ function validateWatchlist(
       securityCode: code,
       visible: record.visible !== false,
       order: requestedOrder ?? result.length,
-      groupId: groupIds.has(groupId) ? groupId : "all"
+      groupId: validIds ? (ids[0] as string) : "all",
+      groupIds: validIds ? [...new Set(ids as string[])] : ["all"]
     });
   });
   return result
@@ -696,7 +704,10 @@ function applyParsedProfile(
         ? parsed.watchlistGroups
         : mergeBy(next.watchlistGroups, parsed.watchlistGroups, (item) => item.id);
     const ids = new Set(next.watchlistGroups.map((group) => group.id));
-    for (const item of next.watchlist) if (!ids.has(item.groupId)) item.groupId = "all";
+    for (const item of next.watchlist) {
+      const remaining = membershipGroupIds(item).filter((id) => ids.has(id));
+      setMembershipGroups(item, remaining.length ? remaining : ["all"]);
+    }
   }
   if (parsed.riskGroups) {
     next.risk.groups =
@@ -794,12 +805,22 @@ function createDiff(before: UserSettings, after: UserSettings): ProfileDiff {
     watchlistUpdated: [...afterWatch].filter(
       (code) =>
         beforeWatch.has(code) &&
-        JSON.stringify(beforeWatchRows.get(code)) !== JSON.stringify(afterWatchRows.get(code))
+        watchlistSignature(beforeWatchRows.get(code)!) !==
+          watchlistSignature(afterWatchRows.get(code)!)
     ),
     watchlistRemoved: [...beforeWatch].filter((code) => !afterWatch.has(code)),
     alertRuleChanges,
     riskSettingsChanged: JSON.stringify(riskBefore) !== JSON.stringify(riskAfter)
   };
+}
+
+function watchlistSignature(item: WatchlistMembership): string {
+  return JSON.stringify({
+    securityCode: item.securityCode,
+    visible: item.visible,
+    order: item.order,
+    groupIds: [...membershipGroupIds(item)].sort()
+  });
 }
 
 function mergeBy<T>(current: T[], incoming: T[], key: (item: T) => string): T[] {

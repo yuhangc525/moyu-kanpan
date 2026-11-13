@@ -167,7 +167,8 @@ input[type="checkbox"] {
 }
 
 .row-actions button,
-.add-row button {
+.add-row button,
+.ths-panel button {
   height: 32px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -181,7 +182,8 @@ input[type="checkbox"] {
 }
 
 .row-actions button:hover,
-.add-row button:hover {
+.add-row button:hover,
+.ths-panel button:hover:not(:disabled) {
   background: #eceef0;
 }
 
@@ -1089,3 +1091,23 @@ footer {
 .watch-group-sync strong { font-size: 13px; }
 .watch-group-sync strong span { margin-left: 6px; font-size: 11px; font-weight: 400; opacity: 0.6; }
 .watch-group-sync p { margin: 5px 0 0; font-size: 12px; opacity: 0.7; }
+
+.watch-multi-groups { display: flex; flex-wrap: wrap; gap: 5px; max-height: 100px; overflow-y: auto; font-size: 11px; }
+.watch-multi-groups label { display: flex; align-items: center; gap: 3px; }
+.watch-multi-groups input { height: auto; }
+@media (max-width: 620px) { .watch-row > .watch-multi-groups { grid-column: 2 / 4; grid-row: 2; } }
+
+.ths-actions, .ths-selection { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 12px 0; }
+.ths-selection label { flex: 1; min-width: 180px; }
+.ths-panel label { display: grid; gap: 6px; }
+.ths-manual { margin: 12px 0; }
+.ths-manual p, .ths-preview p, .ths-message { font-size: 12px; line-height: 1.6; }
+.ths-manual button { margin-top: 8px; }
+.ths-table-wrap { max-height: 280px; overflow: auto; margin: 12px 0; }
+.ths-preview table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.ths-preview th, .ths-preview td { padding: 8px; text-align: right; border-bottom: 1px solid var(--line); }
+.ths-preview th:first-child, .ths-preview td:first-child { text-align: left; }
+.ths-preview small { display: block; opacity: 0.6; }
+.ths-preview > button { margin-top: 10px; }
+.ths-panel button { min-height: 34px; height: auto; padding: 7px 12px; font-size: 12px; }
+.ths-panel { scroll-margin-top: 74px; }
