@@ -43,6 +43,60 @@ import {
 } from "./presentation/chartInteraction.js";
 import { describeAppSnapshotProblem } from "./domain/appSnapshotShape.js";
 
+let addingHolding: Security | null = null;
+let searchTimer: number | undefined;
+let searchComposing = false;
+let searchIndex = 0;
+let draggedStock: { kind: "holdings" | "watchlist"; code: string } | null = null;
+let reorderBusy = false;
+let toastTimer: number | undefined;
+let undoToken = "";
+function showToast(message: string, token = ""): void {
+  window.clearTimeout(toastTimer);
+  undoToken = token;
+  document.getElementById("operation-toast")?.remove();
+  const element = document.createElement("div");
+  element.id = "operation-toast";
+  element.className = "operation-toast";
+  element.setAttribute("role", "status");
+  element.innerHTML = `<span>${escapeHtml(message)}</span>${token ? '<button data-action="undo-delete">撤销</button>' : ""}`;
+  rootElement.append(element);
+  toastTimer = window.setTimeout(
+    () => {
+      element.remove();
+      undoToken = "";
+    },
+    token ? 10000 : 3500
+  );
+}
+function resetStockSearch(): void {
+  window.clearTimeout(searchTimer);
+  stockSearchVersion++;
+  stockBusy = false;
+  stockQuery = "";
+  stockResults = [];
+  stockMessage = "";
+  searchIndex = 0;
+}
+function queueStockSearch(): void {
+  if (!undoToken) document.getElementById("operation-toast")?.remove();
+  window.clearTimeout(searchTimer);
+  stockSearchVersion++;
+  stockBusy = false;
+  stockResults = [];
+  searchIndex = 0;
+  stockMessage = "";
+  if (!stockQuery.trim()) {
+    render(snapshot);
+    return;
+  }
+  searchTimer = window.setTimeout(() => {
+    void searchStocks();
+  }, 280);
+}
+function dragHandle(kind: "holdings" | "watchlist", code: string): string {
+  return `<button class="sort-handle" type="button" draggable="true" data-reorder="${kind}" data-code="${escapeAttr(code)}" data-action="sort-handle" title="拖动排序；Alt + ↑ / ↓ 调整顺序" aria-label="拖动排序；Alt 加方向键调整顺序">⠿</button>`;
+}
 let holdingDraft: HoldingEditDraft | null = null;
 let holdingEditBusy = false;
 let holdingEditMessage = "";
@@ -65,17 +119,29 @@ async function saveHoldingEdit(): Promise<void> {
   holdingEditMessage = "";
   render(snapshot);
   try {
-    const settings = await window.floatingStock.updateHolding({
-      securityCode: draft.securityCode,
-      quantity: Number(draft.quantity),
-      costPrice: Number(draft.costPrice),
-      groupId: draft.groupId,
-      note: draft.note,
-      expected: draft.expected
-    });
+    const settings = addingHolding
+      ? (
+          await window.floatingStock.portfolioAction({
+            action: "add",
+            security: addingHolding,
+            quantity: Number(draft.quantity),
+            costPrice: Number(draft.costPrice)
+          })
+        ).settings
+      : await window.floatingStock.updateHolding({
+          securityCode: draft.securityCode,
+          quantity: Number(draft.quantity),
+          costPrice: Number(draft.costPrice),
+          groupId: draft.groupId,
+          note: draft.note,
+          expected: draft.expected
+        });
     snapshot = { ...snapshot, settings };
     holdingDraft = null;
-    holdingEditMessage = "持仓已保存";
+    addingHolding = null;
+    holdingEditMessage = "";
+    resetStockSearch();
+    showToast("持仓已保存");
   } catch (error) {
     holdingEditMessage = error instanceof Error ? error.message : "保存失败，请重试";
   } finally {
@@ -143,15 +209,22 @@ async function manageStock(action: WatchlistAction["action"]): Promise<void> {
   menu.message = "";
   renderStockMenu();
   try {
-    const settings = await window.floatingStock.manageWatchlist({
+    const request: WatchlistAction = {
       code: menu.code,
       action,
       groupId: menu.groupId,
       groupIds: menu.ids
-    });
+    };
+    const result =
+      action === "groups"
+        ? { settings: await window.floatingStock.manageWatchlist(request), undoToken: undefined }
+        : await window.floatingStock.removeWatchStock(request);
     stockMenu = null;
-    snapshot = { ...snapshot, settings };
-    stockMessage = action === "groups" ? "分组已更新" : "已移除自选归属；持仓记录不受影响";
+    snapshot = { ...snapshot, settings: result.settings };
+    showToast(
+      action === "groups" ? "分组已更新" : "已移除自选归属，持仓不受影响",
+      result.undoToken
+    );
     render(snapshot);
   } catch (error) {
     menu.busy = false;
@@ -168,6 +241,7 @@ let stockBusy = false;
 let stockSearchVersion = 0;
 
 function renderStockSearch(): string {
+  const forHoldings = resolveActiveTab(snapshot.settings).type === "holdings";
   const targetGroup =
     selectedWatchlistGroup === HOLDINGS_WATCHLIST_GROUP_ID
       ? "all"
@@ -177,6 +251,10 @@ function renderStockSearch(): string {
       .filter((item) => item.visible && membershipGroupIds(item).includes(targetGroup))
       .map((item) => item.securityCode)
   );
+  if (forHoldings) {
+    added.clear();
+    snapshot.settings.holdings.forEach((item) => added.add(item.securityCode));
+  }
   const addingToDefault = selectedWatchlistGroup === HOLDINGS_WATCHLIST_GROUP_ID;
   return `<section class="stock-search" aria-label="添加自选股票">
     ${
@@ -184,11 +262,14 @@ function renderStockSearch(): string {
         ? `<div class="stock-search-panel">
       <div class="stock-search-heading"><span>${stockResults.length || stockBusy ? "搜索结果" : "操作提示"}</span><button type="button" data-action="close-stock-search" aria-label="关闭提示" title="关闭提示" ${stockBusy ? "disabled" : ""}>×</button></div>
       <div role="status" class="stock-search-message">${escapeHtml(stockMessage)}</div>
-      <div class="stock-search-results">${stockResults
+      <div class="stock-search-results" role="listbox" id="stock-options" aria-label="股票搜索结果">${stockResults
         .map(
-          (item, index) => `<div class="stock-search-result">
+          (
+            item,
+            index
+          ) => `<div class="stock-search-result ${index === searchIndex ? "is-selected" : ""}" role="option" id="stock-option-${index}" aria-selected="${index === searchIndex}">
         <span><strong>${escapeHtml(item.name)}</strong><small>${item.market}.${item.code}</small></span>
-        <button data-action="add-watch-stock" data-index="${index}" ${stockBusy || added.has(item.code) ? "disabled" : ""}>${added.has(item.code) ? "已添加" : addingToDefault ? "加入默认分组" : "加入自选"}</button>
+        <button data-action="add-watch-stock" data-index="${index}" ${stockBusy || added.has(item.code) ? "disabled" : ""}>${added.has(item.code) ? "已添加" : forHoldings ? "填写持仓" : addingToDefault ? "加入默认分组" : "加入自选"}</button>
       </div>`
         )
         .join("")}</div>
@@ -196,14 +277,15 @@ function renderStockSearch(): string {
         : ""
     }
     <form class="stock-search-form" aria-busy="${stockBusy}">
-      <input id="stock-query" aria-label="股票代码或简称" placeholder="${addingToDefault ? "代码或简称，添加至默认分组" : "输入股票代码或简称"}" maxlength="40" value="${escapeAttr(stockQuery)}" autocomplete="off">
+      <input id="stock-query" role="combobox" aria-autocomplete="list" aria-controls="stock-options" aria-expanded="${stockResults.length > 0}" ${stockResults.length ? `aria-activedescendant="stock-option-${searchIndex}"` : ""} aria-label="股票代码或简称" placeholder="${addingToDefault ? "代码或简称，添加至默认分组" : "输入股票代码或简称"}" maxlength="40" value="${escapeAttr(stockQuery)}" autocomplete="off">
       <button class="stock-search-add" type="submit" aria-label="搜索并添加股票" title="搜索并添加股票" ${stockBusy ? "disabled" : ""}>${stockBusy ? "…" : "+"}</button>
     </form>
   </section>`;
 }
 
 async function searchStocks(): Promise<void> {
-  if (!window.floatingStock || stockBusy) return;
+  if (!window.floatingStock) return;
+  window.clearTimeout(searchTimer);
   const query = stockQuery.trim();
   if (!query) {
     stockMessage = "请输入股票代码或简称";
@@ -219,6 +301,7 @@ async function searchStocks(): Promise<void> {
     const results = await window.floatingStock.searchSecurities(query);
     if (version !== stockSearchVersion) return;
     stockResults = results;
+    searchIndex = 0;
     stockMessage = results.length ? "" : "未找到股票，请尝试完整代码或简称";
   } catch {
     if (version === stockSearchVersion) stockMessage = "搜索失败，请检查网络后重试";
@@ -233,6 +316,27 @@ async function searchStocks(): Promise<void> {
 async function addWatchStock(index: number): Promise<void> {
   const security = stockResults[index];
   if (!security || stockBusy || !window.floatingStock) return;
+  if (resolveActiveTab(snapshot.settings).type === "holdings") {
+    if (
+      holdingDraft ||
+      snapshot.settings.holdings.some((item) => item.securityCode === security.code)
+    )
+      return;
+    addingHolding = security;
+    holdingDraft = {
+      securityCode: security.code,
+      quantity: "",
+      costPrice: "",
+      groupId: "all",
+      note: "",
+      expected: { quantity: 1, costPrice: 1, groupId: "all", note: "" }
+    };
+    resetStockSearch();
+    render(snapshot);
+    document.getElementById("holding-edit-quantity")?.focus();
+    return;
+  }
+
   const targetGroup =
     selectedWatchlistGroup === HOLDINGS_WATCHLIST_GROUP_ID
       ? "all"
@@ -244,7 +348,8 @@ async function addWatchStock(index: number): Promise<void> {
     if (selectedWatchlistGroup === HOLDINGS_WATCHLIST_GROUP_ID)
       selectedWatchlistGroup = targetGroup;
     snapshot = { ...snapshot, settings };
-    stockMessage = `${security.name} 已加入自选`;
+    resetStockSearch();
+    showToast(`${security.name} 已加入自选`);
   } catch (error) {
     stockMessage = error instanceof Error ? error.message : "添加失败，请重试";
   } finally {
@@ -496,6 +601,8 @@ function render(next: AppSnapshot): void {
   // Keep an active IME composition intact while quote snapshots arrive.
   if (
     holdingComposing ||
+    searchComposing ||
+    draggedStock !== null ||
     (document.activeElement instanceof HTMLSelectElement &&
       document.activeElement.dataset.holdingField)
   ) {
@@ -551,6 +658,7 @@ function render(next: AppSnapshot): void {
         ${renderShapeProblem()}
         ${renderRecentAlert(snapshot)}
         ${renderErrors(snapshot.errors)}
+        ${renderDataStatus(snapshot)}
         <div class="page-body">
           ${renderPage(tab, next)}
         </div>
@@ -725,6 +833,7 @@ function renderPage(tab: TabConfig, next: AppSnapshot): string {
 function renderHoldings(next: AppSnapshot): string {
   if (
     holdingDraft &&
+    !addingHolding &&
     !next.settings.holdings.some((item) => item.securityCode === holdingDraft?.securityCode)
   ) {
     holdingDraft = null;
@@ -744,7 +853,7 @@ function renderHoldings(next: AppSnapshot): string {
     .join("");
 
   if (!rows) {
-    return `<div class="empty-state"><strong>尚未配置持仓</strong><span>可在设置中填写数量和成本价。</span></div>`;
+    return `<div class="holdings-page"><div class="scroll-list holding-list"><div class="empty-state"><strong>还没有持仓</strong><span>在下方搜索股票，填写数量与成本即可添加。</span></div>${renderNewHolding()}</div>${renderStockSearch()}</div>`;
   }
 
   // 汇总卡直接使用风险模型（PortfolioRiskMetrics）：任一持仓缺报价时它整体返回 null，
@@ -768,9 +877,25 @@ function renderHoldings(next: AppSnapshot): string {
         ${next.settings.holdings.length ? '<p class="pnl-note">* 当日有买卖时，今日盈亏仅供参考</p>' : ""}
       </div>
       ${renderRiskStatus(next)}
-      <div class="scroll-list holding-list">${!holdingDraft && holdingEditMessage ? `<div role="status" class="holding-edit-message">${escapeHtml(holdingEditMessage)}</div>` : ""}${rows}</div>
+      <div class="scroll-list holding-list">${!holdingDraft && holdingEditMessage ? `<div role="status" class="holding-edit-message">${escapeHtml(holdingEditMessage)}</div>` : ""}${rows}${renderNewHolding()}</div>
+      ${renderStockSearch()}
     </div>
   `;
+}
+
+function renderNewHolding(): string {
+  if (!addingHolding || !holdingDraft) return "";
+  const settings = {
+    ...snapshot.settings,
+    securities: [
+      ...snapshot.settings.securities.filter((item) => item.code !== addingHolding?.code),
+      addingHolding
+    ]
+  };
+  return renderHoldingEditor(holdingDraft, settings, holdingEditBusy, holdingEditMessage)
+    .replace('class="holding-editor"', 'class="holding-editor holding-add-editor"')
+    .replace('aria-label="编辑持仓', 'aria-label="添加持仓')
+    .replace(">保存</button>", ">添加持仓</button>");
 }
 
 function renderHoldingRow(
@@ -791,9 +916,9 @@ function renderHoldingRow(
   const dailyDirection = quoteDirection(quote);
 
   return `
-    <article class="quote-row holding-row ${dailyDirection}" ${marketDetailAttributes("stock", security?.market ?? quote?.market, holding.securityCode)}>
+    <article data-sort-code="${holding.securityCode}" data-sort-kind="holdings" class="quote-row holding-row ${dailyDirection}" ${marketDetailAttributes("stock", security?.market ?? quote?.market, holding.securityCode)}>
       <div class="quote-name">
-        <strong>${escapeHtml(security?.alias || security?.name || quote?.name || holding.securityCode)}</strong>
+        ${dragHandle("holdings", holding.securityCode)}<strong>${escapeHtml(security?.alias || security?.name || quote?.name || holding.securityCode)}</strong>
         <span>${security?.market ?? quote?.market ?? ""}.${holding.securityCode} · ${formatQuantity(holding.quantity)}股 @ ${formatNumber(holding.costPrice)}${renderQuoteQuality(quote)}${renderHoldingRiskHint(risk)}</span>
         <button type="button" class="holding-edit-button" data-action="edit-holding" data-code="${escapeAttr(holding.securityCode)}" ${holdingDraft || holdingEditBusy ? "disabled" : ""}>编辑</button>
       </div>
@@ -814,7 +939,20 @@ function renderQuoteList(codes: string[], next: AppSnapshot): string {
   }
 
   return `<div class="scroll-list quote-list">${orderedCodes
-    .map((code) => renderQuote(code, quoteMap.get(code), next.settings))
+    .map((code) => {
+      const html = renderQuote(code, quoteMap.get(code), next.settings);
+      if (resolveActiveTab(next.settings).type !== "watchlist") return html;
+      const kind =
+        selectedWatchlistGroup === HOLDINGS_WATCHLIST_GROUP_ID ? "holdings" : "watchlist";
+      if (
+        kind === "watchlist" &&
+        !next.settings.watchlist.some((item) => item.securityCode === code)
+      )
+        return html;
+      return html
+        .replace("<article ", `<article data-sort-code="${code}" data-sort-kind="${kind}" `)
+        .replace('<div class="quote-name">', `<div class="quote-name">${dragHandle(kind, code)}`);
+    })
     .join("")}</div>`;
 }
 
@@ -1647,19 +1785,75 @@ rootElement.addEventListener("change", (event) => {
 });
 rootElement.addEventListener("input", (event) => {
   const input = event.target as HTMLInputElement;
-  if (input.id === "stock-query") stockQuery = input.value;
+  if (input.id === "stock-query") {
+    stockQuery = input.value;
+    if (!searchComposing) queueStockSearch();
+  }
   updateHoldingDraft(input);
 });
 rootElement.addEventListener("compositionstart", (event) => {
+  if ((event.target as HTMLElement).id === "stock-query") {
+    searchComposing = true;
+    window.clearTimeout(searchTimer);
+    stockSearchVersion++;
+  }
   if ((event.target as HTMLElement).dataset.holdingField) holdingComposing = true;
 });
 rootElement.addEventListener("compositionend", (event) => {
+  if ((event.target as HTMLElement).id === "stock-query") {
+    searchComposing = false;
+    stockQuery = (event.target as HTMLInputElement).value;
+    queueStockSearch();
+  }
   if ((event.target as HTMLElement).dataset.holdingField) {
     holdingComposing = false;
     updateHoldingDraft(event.target as HTMLInputElement);
   }
 });
 rootElement.addEventListener("keydown", (event) => {
+  const handle = (event.target as HTMLElement).closest<HTMLElement>("[data-reorder]");
+  if (handle && event.altKey && ["ArrowUp", "ArrowDown"].includes(event.key)) {
+    event.preventDefault();
+    const rows = [
+      ...rootElement.querySelectorAll<HTMLElement>(`[data-sort-kind="${handle.dataset.reorder}"]`)
+    ];
+    const index = rows.findIndex((row) => row.dataset.sortCode === handle.dataset.code);
+    const target = rows[index + (event.key === "ArrowUp" ? -1 : 1)];
+    if (target)
+      void reorderStock(
+        handle.dataset.reorder as "holdings" | "watchlist",
+        handle.dataset.code!,
+        target.dataset.sortCode!
+      );
+    return;
+  }
+  if (
+    (event.target as HTMLElement).id === "stock-query" &&
+    !event.isComposing &&
+    !searchComposing
+  ) {
+    if (["ArrowDown", "ArrowUp"].includes(event.key) && stockResults.length) {
+      event.preventDefault();
+      searchIndex =
+        (searchIndex + (event.key === "ArrowDown" ? 1 : -1) + stockResults.length) %
+        stockResults.length;
+      render(snapshot);
+      document.getElementById(`stock-option-${searchIndex}`)?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    if (event.key === "Enter" && stockResults.length && !stockBusy) {
+      event.preventDefault();
+      void addWatchStock(searchIndex);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      resetStockSearch();
+      render(snapshot);
+      return;
+    }
+  }
+
   if (event.key === "Escape" && stockMenu) {
     event.preventDefault();
     closeStockMenu();
@@ -1678,6 +1872,7 @@ rootElement.addEventListener("keydown", (event) => {
   }
   if (event.key === "Escape" && holdingDraft && !holdingEditBusy && !event.isComposing) {
     holdingDraft = null;
+    addingHolding = null;
     holdingEditMessage = "";
     render(snapshot);
   }
@@ -1693,12 +1888,89 @@ rootElement.addEventListener("submit", (event) => {
     void searchStocks();
   }
 });
+async function reorderStock(
+  kind: "holdings" | "watchlist",
+  code: string,
+  targetCode: string
+): Promise<void> {
+  if (reorderBusy || code === targetCode || !window.floatingStock) return;
+  reorderBusy = true;
+  try {
+    const result = await window.floatingStock.portfolioAction({
+      action: "reorder",
+      kind,
+      code,
+      targetCode
+    });
+    snapshot = { ...snapshot, settings: result.settings };
+    showToast("顺序已保存");
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : "排序保存失败");
+  } finally {
+    reorderBusy = false;
+    render(snapshot);
+  }
+}
+rootElement.addEventListener("dragstart", (event) => {
+  const handle = (event.target as HTMLElement).closest<HTMLElement>("[data-reorder]");
+  if (!handle || reorderBusy || holdingDraft || stockBusy) {
+    event.preventDefault();
+    return;
+  }
+  draggedStock = {
+    kind: handle.dataset.reorder as "holdings" | "watchlist",
+    code: handle.dataset.code!
+  };
+  event.dataTransfer?.setData("text/plain", draggedStock.code);
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+});
+rootElement.addEventListener("dragover", (event) => {
+  const row = (event.target as HTMLElement).closest<HTMLElement>("[data-sort-code]");
+  if (!row || !draggedStock || row.dataset.sortKind !== draggedStock.kind) return;
+  event.preventDefault();
+  rootElement.querySelector(".sort-target")?.classList.remove("sort-target");
+  row.classList.add("sort-target");
+});
+rootElement.addEventListener("drop", (event) => {
+  const row = (event.target as HTMLElement).closest<HTMLElement>("[data-sort-code]");
+  const source = draggedStock;
+  draggedStock = null;
+  if (!row || !source || row.dataset.sortKind !== source.kind) return;
+  event.preventDefault();
+  void reorderStock(source.kind, source.code, row.dataset.sortCode!);
+});
+rootElement.addEventListener("dragend", () => {
+  draggedStock = null;
+  render(snapshot);
+});
+window.addEventListener("offline", () => render(snapshot));
+window.addEventListener("online", () => render(snapshot));
 rootElement.addEventListener("pointermove", handleChartPointerMove);
 rootElement.addEventListener("pointerleave", hideChartHover);
 
 async function handleRootClick(event: MouseEvent): Promise<void> {
   const control = (event.target as HTMLElement).closest<HTMLElement>("[data-action], [data-url]");
-  if (!control) return;
+  if (!control || (control instanceof HTMLButtonElement && control.disabled)) return;
+  if (control.dataset.action === "sort-handle") return;
+  if (control.dataset.action === "undo-delete") {
+    if (!undoToken || !window.floatingStock) return;
+    const token = undoToken;
+    undoToken = "";
+    try {
+      const result = await window.floatingStock.portfolioAction({ action: "undo", token });
+      snapshot = { ...snapshot, settings: result.settings };
+      render(snapshot);
+      showToast("已恢复自选分组");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "撤销失败，请重试", token);
+    }
+    return;
+  }
+  if (control.dataset.action === "retry-data") {
+    await window.floatingStock?.notifyOnline();
+    showToast("正在重试，恢复联网后会自动更新");
+    return;
+  }
 
   if (control.closest("#stock-context-menu")) {
     if (stockMenu?.busy) return;
@@ -1733,12 +2005,14 @@ async function handleRootClick(event: MouseEvent): Promise<void> {
   if (control.dataset.action === "cancel-holding-edit") {
     if (!holdingEditBusy) {
       holdingDraft = null;
+      addingHolding = null;
       holdingEditMessage = "";
       render(snapshot);
     }
     return;
   }
   if (control.dataset.action === "watchlist-group") {
+    resetStockSearch();
     selectedWatchlistGroup = control.dataset.groupId ?? "";
     render(snapshot);
     rootElement.querySelector<HTMLElement>(".quote-list")?.scrollTo({ top: 0 });
@@ -1746,10 +2020,7 @@ async function handleRootClick(event: MouseEvent): Promise<void> {
   }
   if (control.dataset.action === "close-stock-search") {
     if (stockBusy) return;
-    stockSearchVersion += 1;
-    stockBusy = false;
-    stockMessage = "";
-    stockResults = [];
+    resetStockSearch();
     render(snapshot);
     return;
   }
@@ -1758,6 +2029,8 @@ async function handleRootClick(event: MouseEvent): Promise<void> {
     return;
   }
   if (control.dataset.action === "tab" && control.dataset.tabId) {
+    if (holdingEditBusy || stockBusy) return;
+    resetStockSearch();
     await activateTab(control.dataset.tabId);
     return;
   }
@@ -1919,6 +2192,27 @@ function renderErrors(errors: string[]): string {
   return `<section class="status">${errors.map((error) => `<span>${escapeHtml(error)}</span>`).join("")}</section>`;
 }
 
+function renderDataStatus(next: AppSnapshot): string {
+  const status = next.feeds.quotes;
+  if (
+    navigator.onLine &&
+    status.lastSuccessAt &&
+    !status.stale &&
+    !status.stalled &&
+    !status.degraded
+  )
+    return "";
+  const state = !navigator.onLine
+    ? "网络已断开"
+    : !status.lastSuccessAt
+      ? "正在连接行情"
+      : status.stalled
+        ? "行情暂未更新"
+        : "行情延迟或部分缺失";
+  const time = status.dataUpdatedAt ?? status.lastSuccessAt;
+  return `<div class="data-status" role="status"><span>${state}${time ? ` · 数据时间 ${escapeHtml(new Date(time).toLocaleString("zh-CN", { hour12: false }))}` : " · 等待首次数据"}，恢复后自动更新</span><button data-action="retry-data">重试</button></div>`;
+}
+
 function renderFeedStatus(label: string, status: AppSnapshot["feeds"]["quotes"]): string {
   if (!status.lastSuccessAt) return `<span class="stale">${label}等待</span>`;
   const sourceLabels: Record<string, string> = {
@@ -1967,7 +2261,7 @@ function renderFeedStatus(label: string, status: AppSnapshot["feeds"]["quotes"])
     `价格提醒${status.alertSafe ? "可用" : "已禁用"}`,
     ...providerDetails
   ].join("；");
-  return `<span class="${staleClass}" title="${escapeAttr(details)}">${label} ${formatFeedTime(status.lastSuccessAt)}${source}${stateText}</span>`;
+  return `<span class="${staleClass}" title="${escapeAttr(details)}">${label} ${formatFeedTime(status.dataUpdatedAt ?? status.lastSuccessAt)}${source}${stateText}</span>`;
 }
 
 function renderQuoteQuality(quote: Quote | undefined): string {

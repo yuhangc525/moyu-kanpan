@@ -27,14 +27,13 @@ export function displayNameForCode(securities: Security[], code: string): string
   return security?.alias || security?.name || code;
 }
 
-export type SettingsPage = "general" | "portfolio" | "quotes" | "news-ai" | "data";
+export type SettingsPage = "general" | "portfolio" | "quotes" | "news-ai" | "data" | "advanced";
 
 const SETTINGS_PAGES: Array<{ id: SettingsPage; label: string }> = [
   { id: "general", label: "窗口与页面" },
-  { id: "portfolio", label: "持仓与提醒" },
+  { id: "portfolio", label: "持仓" },
   { id: "quotes", label: "自选与行情" },
-  { id: "news-ai", label: "新闻与 AI" },
-  { id: "data", label: "导入与备份" }
+  { id: "advanced", label: "高级设置" }
 ];
 
 const TAB_TYPE_LABELS: Record<TabConfig["type"], string> = {
@@ -47,7 +46,7 @@ const TAB_TYPE_LABELS: Record<TabConfig["type"], string> = {
 };
 
 export function settingsPageClass(page: SettingsPage, activePage: SettingsPage): string {
-  return `settings-page-section${activePage === page ? " is-active" : ""}`;
+  return `settings-page-section${activePage === page || (activePage === "advanced" && ["news-ai", "data"].includes(page)) ? " is-active" : ""}`;
 }
 
 export function renderSettingsNavigation(activePage: SettingsPage): string {
@@ -347,7 +346,7 @@ export function renderProfileLiveRegion(state: ProfilePanelState): string {
 
 export function renderProfilePanel(state: ProfilePanelState): string {
   return `
-    <section class="panel profile-panel ${settingsPageClass("data", state.activePage)}">
+    <section class="panel profile-panel ${settingsPageClass("data", state.activePage)}"><details class="advanced-details advanced-profile"><summary>导入与备份</summary>
       <div class="panel-heading">
         <div>
           <h2>配置导入与备份</h2>
@@ -373,6 +372,6 @@ export function renderProfilePanel(state: ProfilePanelState): string {
         <textarea data-setting="profile-text" spellcheck="false" placeholder="{&#10;  &quot;profileVersion&quot;: 1,&#10;  ...&#10;}">${escapeHtml(state.text)}</textarea>
       </label>
       <div id="profile-live">${renderProfileLiveRegion(state)}</div>
-    </section>
+    </details></section>
   `;
 }

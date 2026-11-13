@@ -147,6 +147,11 @@ describe("settings view builders", () => {
     assert.match(nav, /data-page="quotes"\s+class="active"/);
     assert.equal((nav.match(/aria-selected="true"/g) ?? []).length, 1);
     assert.match(nav, /窗口与页面/);
+    assert.match(nav, /高级设置/);
+    assert.equal((nav.match(/data-action="settings-page"/g) ?? []).length, 4);
+    assert.equal(settingsPageClass("news-ai", "advanced"), "settings-page-section is-active");
+    assert.equal(settingsPageClass("data", "advanced"), "settings-page-section is-active");
+    assert.equal(settingsPageClass("portfolio", "advanced"), "settings-page-section");
   });
 
   it("falls back from alias to name to code", () => {

@@ -1,3 +1,4 @@
+import { applyPortfolioAction, restoreWatchlistItem } from "../src/domain/portfolioActions.js";
 import { ThsIntegration } from "./ths.js";
 import { applyWatchlistAction, membershipGroupIds } from "../src/domain/watchlistGroups.js";
 import { applyHoldingEdit } from "../src/domain/holdingEdit.js";
@@ -1513,6 +1514,50 @@ function registerIpc(): void {
       groupId
     });
     return saveSettings(next);
+  });
+  const removals = new Map<
+    string,
+    { item: UserSettings["watchlist"][number]; ids: string[]; expires: number; tabs: string[] }
+  >();
+  handleTrusted("watchlist:remove", async (_event, value: unknown) => {
+    const request = value as { code?: string; action?: string; groupId?: string } | null;
+    if (!request || !["remove-all", "remove-current"].includes(request.action ?? ""))
+      throw new Error("删除操作无效");
+    const original = config.watchlist.find((row) => row.securityCode === request.code);
+    if (!original) throw new Error("该自选已删除");
+    const item = structuredClone(original);
+    const tabs = config.tabs
+      .filter((tab) => tab.securityCodes.includes(item.securityCode))
+      .map((tab) => tab.id);
+    const next = applyWatchlistAction(settingsForRenderer(config), request);
+    const settings = await saveSettings(next);
+    for (const [key, entry] of removals) if (entry.expires < Date.now()) removals.delete(key);
+    const token = crypto.randomUUID();
+    removals.set(token, {
+      item,
+      ids: request.action === "remove-all" ? membershipGroupIds(item) : [request.groupId!],
+      tabs,
+      expires: Date.now() + 15000
+    });
+    return { settings, undoToken: token };
+  });
+  handleTrusted("portfolio:action", async (_event, value: unknown) => {
+    const request = value as { action?: string; token?: string } | null;
+    if (request?.action === "undo") {
+      const entry = removals.get(request.token ?? "");
+      if (!entry || entry.expires < Date.now()) throw new Error("撤销已过期");
+      const next = restoreWatchlistItem(settingsForRenderer(config), entry.item, entry.ids);
+      for (const tab of next.tabs) {
+        if (entry.tabs.includes(tab.id) && !tab.securityCodes.includes(entry.item.securityCode))
+          tab.securityCodes.push(entry.item.securityCode);
+      }
+      const settings = await saveSettings(next);
+      removals.delete(request.token!);
+      return { settings };
+    }
+    return {
+      settings: await saveSettings(applyPortfolioAction(settingsForRenderer(config), value))
+    };
   });
   handleTrusted("watchlist:manage", (_event, request: unknown) =>
     saveSettings(applyWatchlistAction(settingsForRenderer(config), request))

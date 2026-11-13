@@ -1288,3 +1288,17 @@ h1 {
 .stock-group-options label { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .stock-menu-actions { display: flex; gap: 8px; }
 .stock-context-menu button:focus-visible { outline: 1px solid currentColor; }
+
+/* Everyday portfolio interactions. */
+.holdings-page { display: flex; flex-direction: column; min-height: 0; height: 100%; gap: 8px; }
+.holdings-page > .holding-list { flex: 1; min-height: 0; max-height: none; }
+.holdings-page .portfolio-summary, .holdings-page .risk-status { flex-shrink: 0; }
+.quote-row:has(.sort-handle) { position: relative; padding-left: 25px; }
+.holding-add-editor .holding-edit-wide { display: none; }
+.sort-handle { position: absolute; left: 3px; top: 50%; transform: translateY(-50%); padding: 0 2px; border: 0; background: transparent; color: inherit; opacity: .45; cursor: grab; font-size: 17px; touch-action: none; }
+.sort-handle:hover, .sort-handle:focus-visible { opacity: 1; }
+.sort-target { outline: 1px solid currentColor; outline-offset: -1px; }
+.stock-search-result.is-selected { background: rgb(255 255 255 / 0.06); border-radius: 4px; }
+.operation-toast { position: fixed; bottom: 86px; left: 12px; right: 12px; z-index: 12; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid rgb(255 255 255 / 0.12); border-radius: 7px; background: rgb(8 13 16 / var(--widget-opacity)); font-size: 12px; box-shadow: 0 14px 42px rgb(0 0 0 / 0.28); }
+.operation-toast button, .data-status button { color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 4px; cursor: pointer; white-space: nowrap; padding: 3px 8px; }
+.data-status { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 0; font-size: 10px; opacity: .75; }

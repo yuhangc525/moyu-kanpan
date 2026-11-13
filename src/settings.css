@@ -1111,3 +1111,8 @@ footer {
 .ths-preview > button { margin-top: 10px; }
 .ths-panel button { min-height: 34px; height: auto; padding: 7px 12px; font-size: 12px; }
 .ths-panel { scroll-margin-top: 74px; }
+
+.advanced-details > summary { cursor: pointer; font-size: 15px; font-weight: 600; padding: 4px 0; }
+.advanced-details[open] > summary { margin-bottom: 20px; }
+
+.settings-undo { position: sticky; bottom: 12px; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }

@@ -12,6 +12,14 @@ import type { ProfileImportMode, ProfilePreview } from "../src/settings/profile.
 const api: FloatingStockApi = {
   thsRequest: (request) =>
     ipcRenderer.invoke("ths:request", request) as ReturnType<FloatingStockApi["thsRequest"]>,
+  portfolioAction: (request) =>
+    ipcRenderer.invoke("portfolio:action", request) as ReturnType<
+      FloatingStockApi["portfolioAction"]
+    >,
+  removeWatchStock: (request) =>
+    ipcRenderer.invoke("watchlist:remove", request) as ReturnType<
+      FloatingStockApi["removeWatchStock"]
+    >,
   manageWatchlist: (request) =>
     ipcRenderer.invoke("watchlist:manage", request) as Promise<UserSettings>,
   updateHolding: (request) =>

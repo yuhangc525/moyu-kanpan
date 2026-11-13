@@ -1,3 +1,4 @@
+import type { PortfolioAction, PortfolioResult } from "./domain/portfolioActions.js";
 import type { WatchlistAction } from "./domain/watchlistGroups.js";
 import type { ThsRequest, ThsStatus, ThsPreview } from "./services/ths/ledger.js";
 import type { HoldingEditRequest } from "./domain/holdingEdit.js";
@@ -18,6 +19,8 @@ export interface ProfileApplyResult {
 
 export interface FloatingStockApi {
   thsRequest: (request: ThsRequest) => Promise<ThsStatus | ThsPreview | UserSettings>;
+  portfolioAction: (request: PortfolioAction) => Promise<PortfolioResult>;
+  removeWatchStock: (request: WatchlistAction) => Promise<PortfolioResult>;
   manageWatchlist: (request: WatchlistAction) => Promise<UserSettings>;
   updateHolding: (request: HoldingEditRequest) => Promise<UserSettings>;
   searchSecurities: (query: string) => Promise<Security[]>;

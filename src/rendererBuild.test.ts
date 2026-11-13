@@ -43,7 +43,7 @@ describe("settings renderer build contract", () => {
     }
     // 页面标签与设置页样式类在 §4-5 拆分后位于 views.ts（纯视图构造函数）。
     const views = await readFile(path.join(root, "src", "settings", "views.ts"), "utf8");
-    for (const label of ["窗口与页面", "持仓与提醒", "自选与行情", "新闻与 AI", "导入与备份"]) {
+    for (const label of ["窗口与页面", "持仓", "自选与行情", "高级设置", "导入与备份"]) {
       assert.match(views, new RegExp(label));
     }
     assert.match(views, /settings-page-section/);

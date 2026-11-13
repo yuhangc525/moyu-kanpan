@@ -72,6 +72,17 @@ let uiMessage: { text: string; kind: "ok" | "error" } | null = null;
 let recordingBossKey = false;
 let activeSettingsPage: SettingsPage = "general";
 let settingsDirty = false;
+let undoDeletion: (() => void) | null = null;
+let undoDeletionTimer: number | undefined;
+function offerDeletionUndo(restore: () => void): void {
+  window.clearTimeout(undoDeletionTimer);
+  undoDeletion = restore;
+  undoDeletionTimer = window.setTimeout(() => {
+    undoDeletion = null;
+    render();
+  }, 10000);
+}
+
 const ths = new ThsSettingsController({
   ipc: () => window.floatingStock,
   render,
@@ -138,6 +149,7 @@ function render(): void {
       }</div>
 
       ${renderSettingsNavigation(activeSettingsPage)}
+      ${undoDeletion ? '<div class="settings-undo" role="status">已删除，保存设置后生效<button data-action="undo-deletion">撤销</button></div>' : ""}
 
       ${renderProfilePanel(profilePanelState())}
 
@@ -239,8 +251,8 @@ function render(): void {
         ${renderAddHolding(settings.securities, settings.holdings)}
       </section>
 
-      <section class="panel ths-panel ${settingsPageClass("portfolio", activeSettingsPage)}">${ths.render()}</section>
-      <section class="panel risk-panel ${settingsPageClass("portfolio", activeSettingsPage)}">
+      <section class="panel ths-panel ${settingsPageClass("advanced", activeSettingsPage)}"><details class="advanced-details advanced-section-1"><summary>同花顺账本与自动同步</summary>${ths.render()}</details></section>
+      <section class="panel risk-panel ${settingsPageClass("advanced", activeSettingsPage)}"><details class="advanced-details advanced-section-2"><summary>交易规则与提醒</summary>
         <div class="panel-heading">
           <div>
             <h2>交易规则与提醒</h2>
@@ -282,7 +294,7 @@ function render(): void {
           ${settings.risk.groups.length ? settings.risk.groups.map(renderRiskGroupSetting).join("") : '<div class="inline-empty">尚未配置风险组</div>'}
         </div>
         <button class="secondary-action" data-action="add-risk-group">添加风险组</button>
-      </section>
+      </details></section>
 
       <section class="panel ${settingsPageClass("quotes", activeSettingsPage)}">
         <div class="panel-heading"><div><h2>自选分组</h2><p>每只自选可同时归属多个分组；删除分组时保留其他归属，无其他归属则移回默认分组。修改后点击保存。</p></div><span>${settings.watchlistGroups.length}/20</span></div>
@@ -358,7 +370,7 @@ function render(): void {
         </label>
       </section>
 
-      <section class="panel ai-panel ${settingsPageClass("news-ai", activeSettingsPage)}">
+      <section class="panel ai-panel ${settingsPageClass("news-ai", activeSettingsPage)}"><details class="advanced-details advanced-section-3"><summary>AI 快速分析</summary>
         <div class="panel-heading">
           <div>
             <h2>AI 快速分析</h2>
@@ -390,9 +402,9 @@ function render(): void {
           <span>${escapeHtml(ai.status?.message ?? "正在读取安全存储状态…")}</span>
         </div>
         <p class="ai-privacy-note">模型仅接收新闻标题、摘要、来源、时间和新闻自身包含的公开代码；不会接收完整持仓组合。DeepSeek 模式固定关闭深度思考并要求 JSON 输出。</p>
-      </section>
+      </details></section>
 
-      <section class="panel ${settingsPageClass("news-ai", activeSettingsPage)}">
+      <section class="panel ${settingsPageClass("news-ai", activeSettingsPage)}"><details class="advanced-details advanced-section-4"><summary>快讯基础设置</summary>
         <div class="panel-heading">
           <div>
             <h2>快讯基础设置</h2>
@@ -411,7 +423,7 @@ function render(): void {
           <span>候选上限</span>
           <input data-setting="news-max" type="number" min="1" max="30" value="${settings.news.maxItems}" />
         </label>
-      </section>
+      </details></section>
 
       <section class="panel ${settingsPageClass("general", activeSettingsPage)}">
         <div class="panel-heading">
@@ -678,6 +690,21 @@ async function handleClick(event: Event): Promise<void> {
     return;
   }
 
+  if (action === "undo-deletion" && undoDeletion) {
+    const restore = undoDeletion;
+    try {
+      restore();
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : "恢复失败", "error");
+      return;
+    }
+    undoDeletion = null;
+    window.clearTimeout(undoDeletionTimer);
+    settingsDirty = true;
+    render();
+    showMessage("已恢复，请保存设置", "ok");
+    return;
+  }
   settingsDirty = true;
 
   if (action === "add-watch-group") {
@@ -726,8 +753,30 @@ async function handleClick(event: Event): Promise<void> {
     return;
   }
   if (action === "delete-stock") {
+    const tabs = settings.tabs
+      .filter((tab) => tab.securityCodes.includes(settings!.watchlist[index]?.securityCode))
+      .map((tab) => tab.id);
     const removed = settings.watchlist.splice(index, 1)[0];
     if (removed) {
+      offerDeletionUndo(() => {
+        if (
+          !settings ||
+          settings.watchlist.some((row) => row.securityCode === removed.securityCode)
+        )
+          return;
+        if (settings.watchlist.length >= 50) {
+          throw new Error("自选股已达50只，无法恢复");
+        }
+        const ids = membershipGroupIds(removed).filter((id) =>
+          settings!.watchlistGroups.some((group) => group.id === id)
+        );
+        setMembershipGroups(removed, ids.length ? ids : ["all"]);
+        settings.watchlist.splice(Math.min(index, settings.watchlist.length), 0, removed);
+        for (const tab of settings.tabs)
+          if (tabs.includes(tab.id) && !tab.securityCodes.includes(removed.securityCode))
+            tab.securityCodes.push(removed.securityCode);
+        normalizeOrder();
+      });
       for (const tab of settings.tabs) {
         tab.securityCodes = tab.securityCodes.filter((code) => code !== removed.securityCode);
       }
@@ -778,7 +827,18 @@ async function handleClick(event: Event): Promise<void> {
     return;
   }
   if (action === "delete-holding") {
-    settings.holdings.splice(holdingIndex, 1);
+    const removed = settings.holdings.splice(holdingIndex, 1)[0];
+    if (removed)
+      offerDeletionUndo(() => {
+        if (!settings || settings.holdings.some((row) => row.securityCode === removed.securityCode))
+          return;
+        if (
+          removed.groupId !== "all" &&
+          !settings.risk.groups.some((group) => group.id === removed.groupId)
+        )
+          removed.groupId = "all";
+        settings.holdings.splice(Math.min(holdingIndex, settings.holdings.length), 0, removed);
+      });
     render();
     return;
   }
@@ -828,7 +888,8 @@ function isSettingsPage(value: string | undefined): value is SettingsPage {
     value === "portfolio" ||
     value === "quotes" ||
     value === "news-ai" ||
-    value === "data"
+    value === "data" ||
+    value === "advanced"
   );
 }
 
