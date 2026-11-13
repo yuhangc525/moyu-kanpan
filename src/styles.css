@@ -1230,22 +1230,37 @@ h1 {
   color: rgb(220 221 222 / 0.58);
 }
 
-.watchlist-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.watchlist-page > .quote-list { flex: 1; }
-.stock-search { flex-shrink: 0; padding: 8px 10px; border-bottom: 1px solid rgb(255 255 255 / 0.12); }
-.stock-search-form { display: flex; gap: 6px; }
-.stock-search-form input { flex: 1; min-width: 0; width: 0; padding: 6px 8px; color: inherit; background: rgb(255 255 255 / 0.06); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 5px; }
-.stock-search button { color: inherit; background: rgb(255 255 255 / 0.08); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 5px; padding: 5px 8px; cursor: pointer; white-space: nowrap; }
+.watchlist-page { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 8px; }
+.watchlist-page > .quote-list { flex: 1; min-height: 0; max-height: none; }
+.watchlist-page > .empty-state { flex: 1; min-height: 0; }
+.watchlist-groups { display: flex; flex-wrap: wrap; gap: 5px; flex-shrink: 0; max-height: 104px; overflow-y: auto; padding: 2px 1px; }
+.watchlist-group { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 6px 10px; border: 1px solid transparent; border-radius: 5px; color: inherit; background: transparent; cursor: pointer; font-size: 11px; opacity: 0.65; transition: background 160ms, opacity 160ms; }
+.watchlist-group span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watchlist-group small { font-size: 10px; opacity: 0.6; font-variant-numeric: tabular-nums; }
+.watchlist-group:hover { background: rgb(255 255 255 / 0.06); opacity: 1; }
+.watchlist-group.active { background: rgb(255 255 255 / 0.11); border-color: rgb(255 255 255 / 0.12); font-weight: 650; opacity: 1; }
+.watchlist-group:focus-visible,
+.stock-search button:focus-visible,
+.stock-search input:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
+.stock-search { position: relative; flex-shrink: 0; padding: 8px 0 0; border-top: 1px solid rgb(255 255 255 / 0.12); }
+.stock-search-form { display: flex; align-items: stretch; gap: 6px; }
+.stock-search-form input { flex: 1; min-width: 0; width: 0; height: 34px; padding: 6px 10px; color: inherit; font: inherit; font-size: 12px; background: rgb(255 255 255 / 0.06); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 6px; }
+.stock-search button { color: inherit; background: rgb(255 255 255 / 0.08); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 5px; padding: 5px 8px; cursor: pointer; white-space: nowrap; transition: background 160ms; }
+.stock-search button:hover:not(:disabled) { background: rgb(255 255 255 / 0.11); }
 .stock-search button:disabled { opacity: 0.5; cursor: default; }
-.stock-search-message { font-size: 11px; margin-top: 4px; }
+.stock-search .stock-search-add { display: grid; place-items: center; flex: 0 0 34px; padding: 0; font-size: 23px; font-weight: 400; line-height: 1; }
+.stock-search-panel { position: absolute; bottom: calc(100% + 8px); left: 0; right: 0; z-index: 2; padding: 10px; border: 1px solid rgb(255 255 255 / 0.12); border-radius: 8px; background: rgb(8 13 16 / var(--widget-opacity)); backdrop-filter: blur(16px); box-shadow: 0 14px 42px rgb(0 0 0 / 0.28); }
+.stock-search-heading { display: flex; align-items: center; justify-content: space-between; font-size: 11px; }
+.stock-search-heading > span { opacity: 0.65; }
+.stock-search-heading button { padding: 0; width: 22px; height: 22px; border: 0; background: transparent; font-size: 16px; }
+.stock-search-message { font-size: 11px; margin-top: 4px; line-height: 1.5; }
 .stock-search-message:empty { display: none; }
-.stock-search-results { max-height: 160px; overflow-y: auto; }
-.stock-search-result { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 0; font-size: 12px; }
-.stock-search-result small { opacity: 0.65; }
-
-.watchlist-group-filter { display: flex; align-items: center; gap: 8px; padding: 6px 10px 0; font-size: 12px; flex-shrink: 0; }
-.watchlist-group-filter select { min-width: 0; max-width: 100%; color: inherit; background: rgb(255 255 255 / 0.08); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 5px; padding: 4px 8px; }
-.watchlist-group-filter option { color: #edf2f4; background: rgb(8 13 16 / var(--widget-opacity)); }
+.stock-search-results { max-height: min(180px, 40vh); overflow-y: auto; }
+.stock-search-result { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; font-size: 12px; }
+.stock-search-result > span { display: grid; gap: 3px; min-width: 0; }
+.stock-search-result strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.stock-search-result small { opacity: 0.55; font-size: 10px; }
+@media (prefers-reduced-motion: reduce) { .watchlist-group, .stock-search button { transition: none; } }
 
 .holding-edit-button,
 .holding-edit-actions button { color: inherit; background: rgb(255 255 255 / 0.08); border: 1px solid rgb(255 255 255 / 0.12); border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 11px; }

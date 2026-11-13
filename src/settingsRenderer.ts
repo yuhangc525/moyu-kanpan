@@ -282,6 +282,7 @@ function render(): void {
             )
             .join("")}
         </div>
+        <div class="watch-group-sync"><strong>持仓 <span>自动同步</span></strong><p>跟随持仓列表自动更新，当前 ${settings.holdings.length} 只。请在持仓页或“持仓与提醒”中维护。</p></div>
         <div class="add-row watch-group-add"><input id="new-watch-group" maxlength="16" placeholder="新分组名称"><button data-action="add-watch-group">新增分组</button></div>
       </section>
 

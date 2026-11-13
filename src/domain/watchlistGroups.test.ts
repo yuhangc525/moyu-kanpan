@@ -7,6 +7,8 @@ import { assertSavableSettings, loadAppConfigFromObject, toUserSettings } from "
 import { exportProfile, previewProfileImport } from "../settings/profile.js";
 import { SettingsStore } from "../settings/store.js";
 import {
+  HOLDINGS_WATCHLIST_GROUP_ID,
+  watchlistViewGroups,
   normalizeWatchlistGroups,
   removeWatchlistGroup,
   visibleWatchlistCodes
@@ -124,4 +126,50 @@ it("persists the migration and group membership across reloads", async () => {
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+it("keeps the holdings group in sync without copying or moving manual watchlist memberships", () => {
+  const value = settings();
+  const original = structuredClone(value.watchlist);
+  const holding = {
+    securityCode: "300750",
+    quantity: 100,
+    costPrice: 10,
+    groupId: "all",
+    note: "",
+    alertRules: {
+      enabled: false,
+      stopLossPrice: null,
+      watchPrice: null,
+      priceAbove: null,
+      priceBelow: null,
+      risePercent: null,
+      fallPercent: null,
+      dailyProfitAmount: null,
+      dailyLossAmount: null,
+      totalProfitAmount: null,
+      totalLossAmount: null
+    }
+  };
+  assert.deepEqual(visibleWatchlistCodes(value, HOLDINGS_WATCHLIST_GROUP_ID), []);
+  value.holdings.push(holding);
+  assert.deepEqual(visibleWatchlistCodes(value, HOLDINGS_WATCHLIST_GROUP_ID), ["300750"]);
+  assert.deepEqual(visibleWatchlistCodes(value), ["000001", "600519", "300750"]);
+  value.holdings.push({ ...holding, securityCode: "000001" });
+  assert.deepEqual(visibleWatchlistCodes(value), ["000001", "600519", "300750"]);
+  value.holdings = [];
+  assert.deepEqual(visibleWatchlistCodes(value, HOLDINGS_WATCHLIST_GROUP_ID), []);
+  assert.deepEqual(value.watchlist, original);
+  assert.deepEqual(visibleWatchlistCodes(value), ["000001", "600519"]);
+});
+
+it("offers a virtual holdings view even with no holdings and never persists its ID", () => {
+  const value = settings();
+  assert.deepEqual(
+    watchlistViewGroups(value).map((group) => group.name),
+    ["全部", "持仓", "默认分组"]
+  );
+  assert.deepEqual(normalizeWatchlistGroups([{ id: HOLDINGS_WATCHLIST_GROUP_ID, name: "持仓" }]), [
+    { id: "all", name: "默认分组" }
+  ]);
 });

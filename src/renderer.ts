@@ -3,7 +3,12 @@ import {
   renderHoldingEditor,
   type HoldingEditDraft
 } from "./presentation/holdingEditor.js";
-import { visibleWatchlistCodes } from "./domain/watchlistGroups.js";
+import {
+  visibleWatchlistCodes,
+  watchlistViewGroups,
+  HOLDINGS_WATCHLIST_GROUP_ID
+} from "./domain/watchlistGroups.js";
+import { renderWatchlistGroups } from "./presentation/watchlistGroups.js";
 import { importantDriverDecision } from "./domain/news.js";
 import { benchmarkCodeForSecurity, buildDecisionCue } from "./domain/decision.js";
 import type { QuoteField, Security, TabConfig, UserSettings } from "./config";
@@ -86,20 +91,28 @@ let stockSearchVersion = 0;
 
 function renderStockSearch(): string {
   const added = new Set(snapshot.settings.watchlist.map((item) => item.securityCode));
+  const addingToDefault = selectedWatchlistGroup === HOLDINGS_WATCHLIST_GROUP_ID;
   return `<section class="stock-search" aria-label="添加自选股票">
-    <form class="stock-search-form">
-      <input id="stock-query" aria-label="股票代码或简称" placeholder="输入股票代码或简称" maxlength="40" value="${escapeAttr(stockQuery)}" autocomplete="off">
-      <button type="submit" ${stockBusy ? "disabled" : ""}>${stockBusy ? "处理中…" : "搜索添加"}</button>
-    </form>
-    <div role="status" class="stock-search-message">${escapeHtml(stockMessage)}</div>
-    <div class="stock-search-results">${stockResults
-      .map(
-        (item, index) => `<div class="stock-search-result">
-      <span>${escapeHtml(item.name)} <small>${item.market}.${item.code}</small></span>
-      <button data-action="add-watch-stock" data-index="${index}" ${stockBusy || added.has(item.code) ? "disabled" : ""}>${added.has(item.code) ? "已添加" : "加入自选"}</button>
+    ${
+      stockMessage || stockResults.length || stockBusy
+        ? `<div class="stock-search-panel">
+      <div class="stock-search-heading"><span>搜索结果</span><button type="button" data-action="close-stock-search" aria-label="关闭搜索结果" title="关闭搜索结果" ${stockBusy ? "disabled" : ""}>×</button></div>
+      <div role="status" class="stock-search-message">${escapeHtml(stockMessage)}</div>
+      <div class="stock-search-results">${stockResults
+        .map(
+          (item, index) => `<div class="stock-search-result">
+        <span><strong>${escapeHtml(item.name)}</strong><small>${item.market}.${item.code}</small></span>
+        <button data-action="add-watch-stock" data-index="${index}" ${stockBusy || added.has(item.code) ? "disabled" : ""}>${added.has(item.code) ? "已添加" : addingToDefault ? "加入默认分组" : "加入自选"}</button>
+      </div>`
+        )
+        .join("")}</div>
     </div>`
-      )
-      .join("")}</div>
+        : ""
+    }
+    <form class="stock-search-form" aria-busy="${stockBusy}">
+      <input id="stock-query" aria-label="股票代码或简称" placeholder="${addingToDefault ? "代码或简称，添加至默认分组" : "输入股票代码或简称"}" maxlength="40" value="${escapeAttr(stockQuery)}" autocomplete="off">
+      <button class="stock-search-add" type="submit" aria-label="搜索并添加股票" title="搜索并添加股票" ${stockBusy ? "disabled" : ""}>${stockBusy ? "…" : "+"}</button>
+    </form>
   </section>`;
 }
 
@@ -120,7 +133,7 @@ async function searchStocks(): Promise<void> {
     const results = await window.floatingStock.searchSecurities(query);
     if (version !== stockSearchVersion) return;
     stockResults = results;
-    stockMessage = results.length ? "请选择要加入自选的股票" : "未找到股票，请尝试完整代码或简称";
+    stockMessage = results.length ? "" : "未找到股票，请尝试完整代码或简称";
   } catch {
     if (version === stockSearchVersion) stockMessage = "搜索失败，请检查网络后重试";
   } finally {
@@ -134,13 +147,16 @@ async function searchStocks(): Promise<void> {
 async function addWatchStock(index: number): Promise<void> {
   const security = stockResults[index];
   if (!security || stockBusy || !window.floatingStock) return;
+  const targetGroup =
+    selectedWatchlistGroup === HOLDINGS_WATCHLIST_GROUP_ID
+      ? "all"
+      : selectedWatchlistGroup || "all";
   stockBusy = true;
   render(snapshot);
   try {
-    const settings = await window.floatingStock.addWatchStock(
-      security,
-      selectedWatchlistGroup || "all"
-    );
+    const settings = await window.floatingStock.addWatchStock(security, targetGroup);
+    if (selectedWatchlistGroup === HOLDINGS_WATCHLIST_GROUP_ID)
+      selectedWatchlistGroup = targetGroup;
     snapshot = { ...snapshot, settings };
     stockMessage = `${security.name} 已加入自选`;
   } catch (error) {
@@ -604,17 +620,14 @@ function renderPage(tab: TabConfig, next: AppSnapshot): string {
   if (marketDetailRequest) return renderMarketDetail();
   if (tab.type === "holdings") return renderHoldings(next);
   if (tab.type === "watchlist") {
-    if (
-      selectedWatchlistGroup &&
-      !next.settings.watchlistGroups.some((group) => group.id === selectedWatchlistGroup)
-    )
+    if (!watchlistViewGroups(next.settings).some((group) => group.id === selectedWatchlistGroup))
       selectedWatchlistGroup = "";
     const codes = visibleWatchlistCodes(next.settings, selectedWatchlistGroup);
-    const filter = `<label class="watchlist-group-filter">分组 <select data-action="watchlist-group" aria-label="自选分组">
-      <option value="" ${!selectedWatchlistGroup ? "selected" : ""}>全部</option>
-      ${next.settings.watchlistGroups.map((group) => `<option value="${escapeAttr(group.id)}" ${group.id === selectedWatchlistGroup ? "selected" : ""}>${escapeHtml(group.name)}</option>`).join("")}
-    </select></label>`;
-    return `<div class="watchlist-page">${filter}${renderStockSearch()}${codes.length ? renderQuoteList(codes, next) : '<div class="empty-state">当前分组暂无股票，可搜索添加或在设置中调整分组。</div>'}</div>`;
+    const emptyText =
+      selectedWatchlistGroup === HOLDINGS_WATCHLIST_GROUP_ID
+        ? "暂无持仓，添加持仓后会自动同步到这里。"
+        : "当前分组暂无股票，可在下方搜索添加。";
+    return `<div class="watchlist-page">${renderWatchlistGroups(next.settings, selectedWatchlistGroup)}${codes.length ? renderQuoteList(codes, next) : `<div class="empty-state">${emptyText}</div>`}${renderStockSearch()}</div>`;
   }
   if (tab.type === "stock-list") return renderQuoteList(tab.securityCodes, next);
   if (tab.type === "drivers") return renderNews(next, tab.maxItems, tab.newsMode);
@@ -1569,6 +1582,21 @@ async function handleRootClick(event: MouseEvent): Promise<void> {
     }
     return;
   }
+  if (control.dataset.action === "watchlist-group") {
+    selectedWatchlistGroup = control.dataset.groupId ?? "";
+    render(snapshot);
+    rootElement.querySelector<HTMLElement>(".quote-list")?.scrollTo({ top: 0 });
+    return;
+  }
+  if (control.dataset.action === "close-stock-search") {
+    if (stockBusy) return;
+    stockSearchVersion += 1;
+    stockBusy = false;
+    stockMessage = "";
+    stockResults = [];
+    render(snapshot);
+    return;
+  }
   if (control.dataset.action === "add-watch-stock") {
     await addWatchStock(Number(control.dataset.index));
     return;
@@ -1663,11 +1691,6 @@ rootElement.addEventListener("change", (event) => {
 async function handleRootChange(event: Event): Promise<void> {
   const select = event.target as HTMLSelectElement;
   updateHoldingDraft(select);
-  if (select.dataset.action === "watchlist-group") {
-    selectedWatchlistGroup = select.value;
-    render(snapshot);
-    return;
-  }
   if (select.dataset.action === "tab-overflow" && select.value) {
     await activateTab(select.value);
   }

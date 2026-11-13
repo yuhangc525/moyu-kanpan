@@ -14,6 +14,7 @@ await compileTypeScript("src/quickRenderer.ts", "quick.js");
 await compileTypeScript("src/excelRenderer.ts", "excel.js");
 await compileTypeScript("src/workRenderer.ts", "workweb.js");
 await compileTypeScript("src/presentation/holdingEditor.ts", "presentation/holdingEditor.js");
+await compileTypeScript("src/presentation/watchlistGroups.ts", "presentation/watchlistGroups.js");
 await compileTypeScript("src/presentation/format.ts", "presentation/format.js");
 await compileTypeScript("src/presentation/chartInteraction.ts", "presentation/chartInteraction.js");
 await compileTypeScript("src/settings/fields.ts", "settings/fields.js");

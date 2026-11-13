@@ -2,6 +2,16 @@ import type { UserSettings, WatchlistGroup } from "../config.js";
 
 export const DEFAULT_WATCHLIST_GROUP = { id: "all", name: "默认分组" };
 export const MAX_WATCHLIST_GROUPS = 20;
+// A virtual group: never persisted as a watchlist membership or edited manually.
+export const HOLDINGS_WATCHLIST_GROUP_ID = "$holdings";
+
+export function watchlistViewGroups(settings: UserSettings): WatchlistGroup[] {
+  return [
+    { id: "", name: "全部" },
+    { id: HOLDINGS_WATCHLIST_GROUP_ID, name: "持仓" },
+    ...settings.watchlistGroups
+  ];
+}
 
 export function normalizeWatchlistGroups(value: unknown): WatchlistGroup[] {
   const groups: WatchlistGroup[] = [{ ...DEFAULT_WATCHLIST_GROUP }];
@@ -37,8 +47,11 @@ export function removeWatchlistGroup(settings: UserSettings, id: string): void {
 }
 
 export function visibleWatchlistCodes(settings: UserSettings, groupId = ""): string[] {
-  return [...settings.watchlist]
+  const holdingCodes = settings.holdings.map((item) => item.securityCode);
+  if (groupId === HOLDINGS_WATCHLIST_GROUP_ID) return [...new Set(holdingCodes)];
+  const codes = [...settings.watchlist]
     .filter((item) => item.visible && (!groupId || item.groupId === groupId))
     .sort((a, b) => a.order - b.order)
     .map((item) => item.securityCode);
+  return groupId ? codes : [...new Set([...codes, ...holdingCodes])];
 }
