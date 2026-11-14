@@ -425,6 +425,7 @@ function openSettingsWindow(): void {
 
   window.on("closed", () => {
     if (settingsWindow === window) settingsWindow = null;
+    thsIntegration?.sync.wake();
     restoreConfiguredAlwaysOnTop();
   });
 }
@@ -1942,7 +1943,20 @@ if (hasSingleInstanceLock)
         "secure-storage:系统安全存储回落到 basic_text（等价明文），建议改用环境变量提供 API Key"
       );
     }
-    thsIntegration = new ThsIntegration(path.join(app.getPath("userData"), "ths-credential.json"));
+    thsIntegration = new ThsIntegration(path.join(app.getPath("userData"), "ths-credential.json"), {
+      readSettings: () => settingsForRenderer(config),
+      saveSettings: (next) => saveSettings(next),
+      manualPauseReason: () =>
+        isQuitting ? "软件正在退出" : settingsSaveInProgress ? "正在保存设置，请稍后同步" : "",
+      pauseReason: () =>
+        isQuitting
+          ? "软件正在退出"
+          : settingsWindow && !settingsWindow.isDestroyed()
+            ? "设置窗口打开期间暂停自动同步，关闭后恢复"
+            : settingsSaveInProgress
+              ? "正在保存设置，稍后自动同步"
+              : ""
+    });
     await thsIntegration.load();
     aiCredentialStore = new EncryptedApiKeyStore(
       path.join(app.getPath("userData"), "ai-credential.json"),
@@ -2035,6 +2049,7 @@ if (hasSingleInstanceLock)
     refreshFastIndicesNow = createSingleFlight(refreshFastIndices);
     refreshMarketNow = createSingleFlight(refreshMarket);
     refreshNewsNow = createSingleFlight(refreshNews);
+    thsIntegration.sync.start();
     runQuoteRefresh();
     runFastIndexRefresh();
     void runMarketRefresh();
@@ -2055,6 +2070,7 @@ app.on("before-quit", (event) => {
   if (shutdownInProgress) return;
   shutdownInProgress = true;
   thsIntegration?.cancelLogin();
+  thsIntegration?.sync.stop();
   isQuitting = true;
   if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
   if (quotePollTimer) clearTimeout(quotePollTimer);

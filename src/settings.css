@@ -1111,6 +1111,10 @@ footer {
 .ths-preview > button { margin-top: 10px; }
 .ths-panel button { min-height: 34px; height: auto; padding: 7px 12px; font-size: 12px; }
 .ths-panel { scroll-margin-top: 74px; }
+.ths-sync { margin: 16px 0; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.ths-sync h3 { margin: 0 0 8px; font-size: 14px; }
+.ths-sync p { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.ths-sync .ths-actions { align-items: end; }
 
 .advanced-details > summary { cursor: pointer; font-size: 15px; font-weight: 600; padding: 4px 0; }
 .advanced-details[open] > summary { margin-bottom: 20px; }

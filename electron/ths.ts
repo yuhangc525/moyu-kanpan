@@ -11,6 +11,12 @@ import {
   type ThsPortfolio
 } from "../src/services/ths/ledger.js";
 import type { UserSettings } from "../src/config.js";
+import {
+  ThsSyncRunner,
+  defaultThsSyncState,
+  type ThsSyncPorts,
+  type ThsSyncState
+} from "../src/services/ths/sync.js";
 
 /** Credentials are encrypted separately from exported application settings. */
 export class ThsIntegration {
@@ -22,7 +28,46 @@ export class ThsIntegration {
   private loginWindow: BrowserWindow | null = null;
   private generation = 0;
   private mutation: Promise<unknown> = Promise.resolve();
-  constructor(private readonly credentialFile: string) {}
+  private writeQueue: Promise<void> = Promise.resolve();
+  private manualSyncing = false;
+  readonly sync: ThsSyncRunner;
+  constructor(
+    private readonly credentialFile: string,
+    ports?: Pick<
+      ThsSyncPorts,
+      "readSettings" | "saveSettings" | "pauseReason" | "manualPauseReason"
+    >
+  ) {
+    this.sync = new ThsSyncRunner({
+      fetch: async (id) => {
+        const generation = this.generation;
+        const result = await this.client.positions(this.cookie, id);
+        if (generation !== this.generation) throw new Error("登录状态已改变，下次将重新同步");
+        return { ...result, token: "auto-sync" };
+      },
+      readSettings: () => {
+        if (!ports) throw new Error("自动同步尚未初始化");
+        return ports.readSettings();
+      },
+      saveSettings: (settings) => {
+        if (!ports) return Promise.reject(new Error("自动同步尚未初始化"));
+        return ports.saveSettings(settings);
+      },
+      persist: (state) => this.persist(this.cookie, this.selectedId, state),
+      manualPauseReason: () =>
+        !this.cookie
+          ? "请重新登录同花顺"
+          : this.loginWindow
+            ? "请先完成登录"
+            : (ports?.manualPauseReason?.() ?? ports?.pauseReason() ?? "自动同步尚未初始化"),
+      pauseReason: () =>
+        !this.cookie
+          ? "请重新登录同花顺"
+          : this.loginWindow
+            ? "正在登录，自动同步已暂停"
+            : (ports?.pauseReason() ?? "自动同步尚未初始化")
+    });
+  }
   async load(): Promise<void> {
     try {
       const value = JSON.parse(await readFile(this.credentialFile, "utf8")) as {
@@ -31,9 +76,10 @@ export class ThsIntegration {
       if (!safeStorage.isEncryptionAvailable()) return;
       const saved = JSON.parse(
         safeStorage.decryptString(Buffer.from(value.encrypted, "base64"))
-      ) as { cookie: string; selectedId: string };
+      ) as { cookie: string; selectedId: string; sync?: unknown };
       this.cookie = normalizeThsCookie(saved.cookie);
       this.selectedId = typeof saved.selectedId === "string" ? saved.selectedId : "";
+      this.sync.restore(saved.sync);
     } catch {
       /* Missing or unreadable credentials require a fresh sign-in. */
     }
@@ -42,23 +88,41 @@ export class ThsIntegration {
     return {
       configured: !!this.cookie,
       selectedId: this.selectedId,
-      portfolios: structuredClone(this.portfolios)
+      portfolios: structuredClone(this.portfolios),
+      sync: this.sync.status()
     };
   }
-  private async persist(cookie: string, selectedId: string): Promise<void> {
+  private async persist(
+    cookie: string,
+    selectedId: string,
+    sync: ThsSyncState = this.sync.snapshot()
+  ): Promise<void> {
     if (!safeStorage.isEncryptionAvailable())
       throw new Error("系统安全存储不可用，无法保存同花顺登录");
     const encrypted = safeStorage
-      .encryptString(JSON.stringify({ cookie, selectedId }))
+      .encryptString(JSON.stringify({ cookie, selectedId, sync }))
       .toString("base64");
-    await atomicWriteText(this.credentialFile, JSON.stringify({ version: 1, encrypted }));
+    const write = this.writeQueue.then(() =>
+      atomicWriteText(this.credentialFile, JSON.stringify({ version: 1, encrypted }))
+    );
+    this.writeQueue = write.catch(() => undefined);
+    await write;
   }
   private async authenticate(value: unknown, generation: number): Promise<ThsStatus> {
     const cookie = normalizeThsCookie(value);
     const portfolios = await this.client.list(cookie);
     if (generation !== this.generation) throw new Error("登录操作已取消");
     const selectedId = portfolios.length === 1 ? portfolios[0]!.id : "";
-    await this.persist(cookie, selectedId);
+    // A fresh sign-in may belong to a different user: require an explicit new binding.
+    this.sync.stop();
+    const previousSync = this.sync.snapshot();
+    const disabledSync = {
+      ...defaultThsSyncState(),
+      intervalSeconds: previousSync.intervalSeconds
+    };
+    await this.persist(cookie, selectedId, disabledSync);
+    this.sync.restore(disabledSync);
+    this.sync.start();
     this.cookie = cookie;
     this.selectedId = selectedId;
     this.portfolios = portfolios;
@@ -174,6 +238,27 @@ export class ThsIntegration {
     if (!value || typeof value !== "object") throw new Error("同花顺操作无效");
     const input = value as Record<string, unknown>;
     if (input.action === "status") return this.status();
+    if (input.action === "sync-now") {
+      if (this.manualSyncing) throw new Error("正在同步中，请等待完成");
+      this.manualSyncing = true;
+      try {
+        const state = this.sync.snapshot();
+        if (state.enabled && input.portfolioId !== state.portfolioId)
+          throw new Error("请同步当前绑定的账本，切换账本需先关闭自动同步");
+        if (!state.enabled)
+          await this.request({
+            action: "sync-configure",
+            enabled: true,
+            portfolioId: input.portfolioId,
+            intervalSeconds: input.intervalSeconds
+          });
+        await this.sync.runNow();
+        this.preview = null;
+        return this.status();
+      } finally {
+        this.manualSyncing = false;
+      }
+    }
     if (input.action === "login") return this.login();
     if (input.action === "cancel") {
       this.cancelLogin();
@@ -181,8 +266,11 @@ export class ThsIntegration {
     }
     if (input.action === "logout") {
       this.cancelLogin();
+      this.sync.stop();
       return this.exclusive(async () => {
+        await this.writeQueue;
         await rm(this.credentialFile, { force: true });
+        this.sync.restore(null);
         this.cookie = "";
         this.selectedId = "";
         this.portfolios = [];
@@ -190,6 +278,41 @@ export class ThsIntegration {
         return this.status();
       });
     }
+    if (input.action === "sync-configure")
+      return this.exclusive(async () => {
+        if (
+          typeof input.enabled !== "boolean" ||
+          typeof input.portfolioId !== "string" ||
+          typeof input.intervalSeconds !== "number"
+        )
+          throw new Error("自动同步配置无效");
+        if (input.enabled) {
+          if (this.loginWindow) throw new Error("请先完成登录");
+          const generation = this.generation;
+          const portfolios = await this.client.list(this.cookie);
+          if (generation !== this.generation) throw new Error("登录状态已改变，请重试");
+          const portfolio = portfolios.find((item) => item.id === input.portfolioId);
+          if (!portfolio) throw new Error("同步账本不存在，请刷新后重新选择");
+          this.portfolios = portfolios;
+          const previousSelection = this.selectedId;
+          this.selectedId = portfolio.id;
+          try {
+            await this.sync.configure(true, portfolio.id, portfolio.name, input.intervalSeconds);
+          } catch (error) {
+            this.selectedId = previousSelection;
+            throw error;
+          }
+        } else {
+          const state = this.sync.snapshot();
+          await this.sync.configure(
+            false,
+            state.portfolioId,
+            state.portfolioName,
+            input.intervalSeconds
+          );
+        }
+        return this.status();
+      });
     if (input.action === "cookie") {
       if (this.loginWindow) throw new Error("请先取消登录窗口");
       const generation = ++this.generation;

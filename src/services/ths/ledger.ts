@@ -7,6 +7,7 @@ import {
   type Security
 } from "../../config.js";
 import { fetchLedger, type FetchLike } from "./transport.js";
+import type { ThsSyncStatus } from "./sync.js";
 
 export interface ThsPortfolio {
   id: string;
@@ -31,10 +32,13 @@ export interface ThsStatus {
   configured: boolean;
   selectedId: string;
   portfolios: ThsPortfolio[];
+  sync?: ThsSyncStatus;
 }
 export type ThsRequest =
   | { action: "status" | "login" | "cancel" | "logout" | "list" }
   | { action: "cookie"; cookie: string }
+  | { action: "sync-configure"; enabled: boolean; portfolioId: string; intervalSeconds: number }
+  | { action: "sync-now"; portfolioId: string; intervalSeconds: number }
   | { action: "preview"; portfolioId: string }
   | { action: "import"; token: string; mode: "merge" | "replace"; settings: UserSettings };
 const BASE = "https://tzzb.10jqka.com.cn/caishen_httpserver/tzzb/caishen_fund/";

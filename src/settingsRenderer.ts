@@ -86,6 +86,7 @@ function offerDeletionUndo(restore: () => void): void {
 const ths = new ThsSettingsController({
   ipc: () => window.floatingStock,
   render,
+  isDirty: () => settingsDirty,
   apply: (next) => {
     settings = next;
     settingsDirty = true;
@@ -458,6 +459,15 @@ function render(): void {
     </main>
   `;
   restoreUiState(rootElement, uiState);
+  if (ths.busy === "sync-now") {
+    rootElement
+      .querySelectorAll<
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
+      >("input, select, textarea, button")
+      .forEach((element) => {
+        element.disabled = true;
+      });
+  }
 }
 
 rootElement.addEventListener("input", handleFormChange);
@@ -1186,6 +1196,8 @@ if (!window.floatingStock) {
     })
     .catch((error) => showMessage(error instanceof Error ? error.message : String(error), "error"));
   void ths.initialize();
+  const thsStatusTimer = window.setInterval(() => void ths.refreshSyncStatus(), 5000);
+  window.addEventListener("beforeunload", () => window.clearInterval(thsStatusTimer));
   window.floatingStock.onSettings((value) => {
     if (settingsDirty) return;
     settings = value;
